@@ -6,6 +6,7 @@
 
 #include <coroutine>
 #include <exception>
+#include <libassert/assert.hpp>
 #include <tl/optional.hpp>
 
 namespace sl::exec {
@@ -21,7 +22,8 @@ public:
     explicit generator(handle_type handle) : handle_{ std::move(handle) } {}
     ~generator() { handle_.destroy(); }
 
-    tl::optional<T> next() {
+    [[nodiscard]] tl::optional<T> next() {
+        handle_.promise().assert_invariant();
         if (handle_.done()) {
             return tl::nullopt;
         }
@@ -45,14 +47,19 @@ public:
     void unhandled_exception() { exception_ = std::current_exception(); }
 
     template <std::convertible_to<T> From>
-    std::suspend_always yield_value(From&& from) {
+    auto yield_value(From&& from) {
         value_ = std::forward<From>(from);
-        return {};
+        return std::suspend_always{};
     }
     void return_void() {}
     // ^^^ compiler hooks
 
+    void assert_invariant() { DEBUG_ASSERT(!value_.has_value() && !exception_); }
     tl::optional<T> release() && {
+        if (exception_) [[unlikely]] {
+            std::rethrow_exception(exception_);
+        }
+
         tl::optional<T> extracted;
         value_.swap(extracted);
         return extracted;
