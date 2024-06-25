@@ -69,15 +69,14 @@ TEST(coro, nestingGenerator) {
     ASSERT_FALSE(nesting_iota.next().has_value());
 }
 
-task<int> calculate_meaning_of_life() {
-    std::cout << "calculating meaning of life brrr..." << std::endl;
-    co_return 42;
-}
 
 TEST(coro, task) {
+    constexpr auto calculate_meaning_of_life = [] -> task<int> { co_return 42; };
     task<int> meaning_of_life = calculate_meaning_of_life();
+    std::cout << "calculating meaning of life brrr..." << std::endl;
+    meaning_of_life.start();
     std::cout << "meaning of life calculated" << std::endl;
-    const int meaning_of_life_result = std::move(meaning_of_life).result();
+    const int meaning_of_life_result = std::move(meaning_of_life).value_or_throw();
     std::cout << "result: " << meaning_of_life_result << std::endl;
     ASSERT_EQ(meaning_of_life_result, 42);
 }
@@ -90,37 +89,37 @@ task<std::vector<std::string>> live_productive_day() {
         std::cout << "taking a shower" << std::endl;
         co_return "shower";
     };
-    done.push_back(co_await shower());
+    done.push_back((co_await shower()).value());
 
     constexpr auto coffee = [] -> task<std::string> {
         std::cout << "making some coffee" << std::endl;
         co_return "coffee";
     };
-    done.push_back(co_await coffee());
+    done.push_back((co_await coffee()).value());
 
     constexpr auto work = [] -> task<std::vector<std::string>> {
         std::cout << "doing work" << std::endl;
         std::vector<std::string> work_done;
 
         constexpr auto jira = [] -> task<std::string> { co_return "jira"; };
-        work_done.push_back(co_await jira());
+        work_done.push_back((co_await jira()).value());
 
         constexpr auto coding = [] -> task<std::string> { co_return "coding"; };
-        work_done.push_back(co_await coding());
+        work_done.push_back((co_await coding()).value());
 
         constexpr auto git = [] -> task<std::string> { co_return "git"; };
-        work_done.push_back(co_await git());
+        work_done.push_back((co_await git()).value());
 
         co_return work_done;
     };
-    auto work_result = co_await work();
+    auto work_result = (co_await work()).value();
     done.insert(done.end(), work_result.begin(), work_result.end());
 
     constexpr auto eat = [] -> task<std::string> {
         std::cout << "eating, yummy" << std::endl;
         co_return "eat";
     };
-    done.push_back(co_await eat());
+    done.push_back((co_await eat()).value());
 
     std::cout << "day ended, time to sleep Z-z-z..." << std::endl;
     co_return done;
@@ -128,7 +127,8 @@ task<std::vector<std::string>> live_productive_day() {
 
 TEST(coro, nestingTask) {
     auto productive_day = live_productive_day();
-    const auto productive_day_result = std::move(productive_day).result();
+    productive_day.start();
+    const auto productive_day_result = std::move(productive_day).value_or_throw();
     ASSERT_EQ(
         productive_day_result,
         (std::vector<std::string>{
