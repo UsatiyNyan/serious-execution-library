@@ -23,18 +23,30 @@ public:
     auto operator co_await() && noexcept { return awaiter{ handle_ }; }
     // ^^^ compiler hooks
 
+private:
     explicit task(handle_type handle) : handle_{ handle } {}
-    ~task() { handle_.destroy(); } // TODO: finalizer???
+
+public:
+    ~task() {
+        if (handle_) {
+            handle_.destroy();
+        }
+    }
+
+    task(const task&) = delete;
+    task& operator=(const task&) = delete;
+    task(task&& other) noexcept : handle_{ std::exchange(other.handle_, {}) } {}
+    task& operator=(task&& other) noexcept { std::swap(handle_, other.handle_); }
 
     void start() { handle_.resume(); }
 
-    auto result() && {
+    [[nodiscard]] auto result() && {
         ASSUME(handle_.done());
-        return std::move(handle_.promise()).result();
+        return std::move(handle_.promise()).get_return();
     }
-    auto value_or_throw() && {
+    [[nodiscard]] auto result_or_throw() && {
         ASSUME(handle_.done());
-        return std::move(handle_.promise()).value_or_throw();
+        return std::move(handle_.promise()).get_return_or_throw();
     }
 
 private:
@@ -81,7 +93,7 @@ public:
     }
     [[nodiscard]] auto await_resume() {
         ASSUME(handle_.done());
-        return std::move(handle_.promise()).result();
+        return std::move(handle_.promise()).get_return();
     }
     // ^^^ compiler hooks
 

@@ -7,6 +7,7 @@
 #include <coroutine>
 #include <exception>
 #include <libassert/assert.hpp>
+#include <tl/expected.hpp>
 #include <tl/optional.hpp>
 
 namespace sl::exec {
@@ -19,16 +20,29 @@ public:
     using handle_type = std::coroutine_handle<promise_type>;
     // ^^^ compiler hooks
 
+private:
     explicit generator(handle_type handle) : handle_{ std::move(handle) } {}
-    ~generator() { handle_.destroy(); }
 
-    [[nodiscard]] tl::optional<T> next() {
-        handle_.promise().assert_invariant();
-        if (handle_.done()) {
-            return tl::nullopt;
+public:
+    ~generator() {
+        if (handle_) {
+            handle_.destroy();
         }
-        handle_.resume();
-        return std::move(handle_.promise()).release();
+    }
+
+    generator(const generator&) = delete;
+    generator& operator=(const generator&) = delete;
+    generator(generator&& other) noexcept : handle_{ std::exchange(other.handle_, {}) } {}
+    generator& operator=(generator&& other) noexcept { std::swap(handle_, other.handle_); }
+
+    [[nodiscard]] auto next() {
+        handle_.promise().resume_impl(handle_);
+        return std::move(handle_.promise()).get_yield();
+    }
+
+    [[nodiscard]] auto next_or_throw() {
+        handle_.promise().resume_impl(handle_);
+        return std::move(handle_.promise()).get_yield_or_throw();
     }
 
 private:
@@ -38,36 +52,46 @@ private:
 template <typename T>
 class generator<T>::promise_type {
 public:
+    using yield_type = tl::expected<T, std::exception_ptr>;
+
     // vvv compiler hooks
     auto get_return_object() { return generator{ handle_type::from_promise(*this) }; };
 
     auto initial_suspend() { return std::suspend_always{}; }
     auto final_suspend() noexcept { return std::suspend_always{}; }
 
-    void unhandled_exception() { exception_ = std::current_exception(); }
+    void unhandled_exception() { maybe_yield_.emplace(tl::make_unexpected(std::current_exception())); }
 
     template <std::convertible_to<T> From>
     auto yield_value(From&& from) {
-        value_ = std::forward<From>(from);
+        maybe_yield_.emplace(tl::in_place, std::forward<From>(from));
         return std::suspend_always{};
     }
     void return_void() {}
     // ^^^ compiler hooks
 
-    void assert_invariant() { DEBUG_ASSERT(!value_.has_value() && !exception_); }
-    tl::optional<T> release() && {
-        if (exception_) [[unlikely]] {
-            std::rethrow_exception(exception_);
-        }
+    void resume_impl(handle_type handle) {
+        ASSUME(!maybe_yield_.has_value());
+        handle.resume();
+        ASSUME(maybe_yield_.has_value() || handle.done());
+    }
 
-        tl::optional<T> extracted;
-        value_.swap(extracted);
-        return extracted;
+    [[nodiscard]] tl::optional<yield_type> get_yield() && noexcept {
+        tl::optional<yield_type> extracted;
+        maybe_yield_.swap(extracted);
+        return std::move(extracted);
+    }
+    [[nodiscard]] tl::optional<T> get_yield_or_throw() && {
+        return std::move(*this).get_yield().map([](yield_type yield_value) {
+            if (!yield_value.has_value()) [[unlikely]] {
+                std::rethrow_exception(yield_value.error());
+            }
+            return std::move(yield_value).value();
+        });
     }
 
 private:
-    tl::optional<T> value_{};
-    std::exception_ptr exception_{};
+    tl::optional<yield_type> maybe_yield_;
 };
 
 } // namespace sl::exec

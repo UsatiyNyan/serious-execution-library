@@ -17,19 +17,19 @@ generator<int> create_iota(int i) {
 
 TEST(coro, generator) {
     auto iota = create_iota(10);
-    const auto maybe_10 = iota.next();
+    const auto maybe_10 = iota.next_or_throw();
     ASSERT_TRUE(maybe_10.has_value());
     EXPECT_EQ(maybe_10.value(), 10);
-    const auto maybe_11 = iota.next();
+    const auto maybe_11 = iota.next_or_throw();
     ASSERT_TRUE(maybe_11.has_value());
     EXPECT_EQ(maybe_11.value(), 11);
-    const auto maybe_12 = iota.next();
+    const auto maybe_12 = iota.next_or_throw();
     ASSERT_TRUE(maybe_12.has_value());
     EXPECT_EQ(maybe_12.value(), 12);
-    const auto maybe_13 = iota.next();
+    const auto maybe_13 = iota.next_or_throw();
     ASSERT_TRUE(maybe_13.has_value());
     EXPECT_EQ(maybe_13.value(), 13);
-    const auto maybe_14 = iota.next();
+    const auto maybe_14 = iota.next_or_throw();
     ASSERT_TRUE(maybe_14.has_value());
     EXPECT_EQ(maybe_14.value(), 14);
 }
@@ -43,7 +43,7 @@ generator<int> create_nesting_iota(int begin, int end, int level = 0) {
 
     {
         auto l = create_nesting_iota(begin, half, level + 1);
-        while (auto l_value = l.next()) {
+        while (auto l_value = l.next_or_throw()) {
             co_yield std::move(l_value).value();
         }
     }
@@ -52,7 +52,7 @@ generator<int> create_nesting_iota(int begin, int end, int level = 0) {
 
     {
         auto r = create_nesting_iota(half + 1, end, level + 1);
-        while (auto r_value = r.next()) {
+        while (auto r_value = r.next_or_throw()) {
             co_yield std::move(r_value).value();
         }
     }
@@ -61,12 +61,12 @@ generator<int> create_nesting_iota(int begin, int end, int level = 0) {
 TEST(coro, nestingGenerator) {
     auto nesting_iota = create_nesting_iota(0, 10);
     for (int i = 0; i < 10; ++i) {
-        const auto maybe_value = nesting_iota.next();
+        const auto maybe_value = nesting_iota.next_or_throw();
         ASSERT_TRUE(maybe_value.has_value());
         EXPECT_EQ(maybe_value.value(), i);
     }
     // should finish at 10th iter
-    ASSERT_FALSE(nesting_iota.next().has_value());
+    ASSERT_FALSE(nesting_iota.next_or_throw().has_value());
 }
 
 
@@ -76,7 +76,7 @@ TEST(coro, task) {
     std::cout << "calculating meaning of life brrr..." << std::endl;
     meaning_of_life.start();
     std::cout << "meaning of life calculated" << std::endl;
-    const int meaning_of_life_result = std::move(meaning_of_life).value_or_throw();
+    const int meaning_of_life_result = std::move(meaning_of_life).result_or_throw();
     std::cout << "result: " << meaning_of_life_result << std::endl;
     ASSERT_EQ(meaning_of_life_result, 42);
 }
@@ -128,7 +128,7 @@ task<std::vector<std::string>> live_productive_day() {
 TEST(coro, nestingTask) {
     auto productive_day = live_productive_day();
     productive_day.start();
-    const auto productive_day_result = std::move(productive_day).value_or_throw();
+    const auto productive_day_result = std::move(productive_day).result_or_throw();
     ASSERT_EQ(
         productive_day_result,
         (std::vector<std::string>{
