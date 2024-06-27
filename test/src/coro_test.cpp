@@ -142,4 +142,20 @@ TEST(coro, nestingTask) {
     );
 }
 
+TEST(coro, tasksCallStack) {
+    constexpr int iterations = 10'000'000;
+    constexpr auto synchronous = [] -> task<int> { co_return 1; };
+    constexpr auto iter_synchronous = [synchronous] -> task<int> {
+        int sum = 0;
+        for (int i = 0; i < iterations; ++i) {
+            sum += co_await synchronous();
+        }
+        co_return sum;
+    };
+    auto iter_synchronous_task = iter_synchronous();
+    iter_synchronous_task.start();
+    const int result = std::move(iter_synchronous_task).result_or_throw();
+    ASSERT_EQ(result, iterations);
+}
+
 } // namespace sl::exec
