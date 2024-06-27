@@ -93,7 +93,7 @@ public:
     }
     [[nodiscard]] auto await_resume() {
         ASSUME(handle_.done());
-        return std::move(handle_.promise()).get_return();
+        return std::move(handle_.promise()).get_return_or_throw();
     }
     // ^^^ compiler hooks
 

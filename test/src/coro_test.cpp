@@ -89,37 +89,37 @@ task<std::vector<std::string>> live_productive_day() {
         std::cout << "taking a shower" << std::endl;
         co_return "shower";
     };
-    done.push_back((co_await shower()).value());
+    done.push_back(co_await shower());
 
     constexpr auto coffee = [] -> task<std::string> {
         std::cout << "making some coffee" << std::endl;
         co_return "coffee";
     };
-    done.push_back((co_await coffee()).value());
+    done.push_back(co_await coffee());
 
     constexpr auto work = [] -> task<std::vector<std::string>> {
         std::cout << "doing work" << std::endl;
         std::vector<std::string> work_done;
 
         constexpr auto jira = [] -> task<std::string> { co_return "jira"; };
-        work_done.push_back((co_await jira()).value());
+        work_done.push_back(co_await jira());
 
         constexpr auto coding = [] -> task<std::string> { co_return "coding"; };
-        work_done.push_back((co_await coding()).value());
+        work_done.push_back(co_await coding());
 
         constexpr auto git = [] -> task<std::string> { co_return "git"; };
-        work_done.push_back((co_await git()).value());
+        work_done.push_back(co_await git());
 
         co_return work_done;
     };
-    auto work_result = (co_await work()).value();
+    auto work_result = co_await work();
     done.insert(done.end(), work_result.begin(), work_result.end());
 
     constexpr auto eat = [] -> task<std::string> {
         std::cout << "eating, yummy" << std::endl;
         co_return "eat";
     };
-    done.push_back((co_await eat()).value());
+    done.push_back(co_await eat());
 
     std::cout << "day ended, time to sleep Z-z-z..." << std::endl;
     co_return done;
