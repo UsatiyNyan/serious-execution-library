@@ -11,35 +11,41 @@
 
 namespace sl::exec {
 
+struct generic_executor;
+
 // default capacity is enough for 2 pointers (so basically this + method)
 using generic_cleanup = meta::defer<fu2::capacity_default>;
 
 struct generic_task {
     virtual ~generic_task() noexcept = default;
-    virtual generic_cleanup execute() noexcept = 0;
-    virtual generic_cleanup cancel() noexcept = 0;
+    [[nodiscard]] virtual generic_cleanup execute(generic_executor&) noexcept = 0;
+    [[nodiscard]] virtual generic_cleanup cancel() noexcept = 0;
 };
 
 struct generic_task_node
     : generic_task
     , meta::intrusive_forward_list_node<generic_task_node> {};
 
+using generic_task_list = meta::intrusive_forward_list<generic_task_node>;
+
 template <typename F>
-    requires(std::is_nothrow_invocable_r_v<void, F>)
+    requires(std::is_nothrow_invocable_r_v<void, F, generic_executor&>)
 class functor_task_node : public generic_task_node {
     template <typename FV>
     explicit functor_task_node(FV&& f) : f_{ std::forward<FV>(f) } {}
 
-    template <typename FV>
-    friend functor_task_node* allocate_functor_task_node(FV&& f) noexcept;
-
 public:
-    generic_cleanup execute() noexcept override {
-        f_();
-        return [this] { delete this; };
+    template <typename FV>
+    static functor_task_node* allocate(FV&& f) noexcept {
+        return new (std::nothrow) functor_task_node{ std::forward<FV>(f) };
+    }
+
+    generic_cleanup execute(generic_executor& executor) noexcept override {
+        f_(executor);
+        return generic_cleanup{ [this] { delete this; } };
     }
     generic_cleanup cancel() noexcept override {
-        return [this] { delete this; };
+        return generic_cleanup{ [this] { delete this; } };
     }
 
 private:
@@ -48,10 +54,5 @@ private:
 
 template <typename FV>
 functor_task_node(FV&&) -> functor_task_node<std::decay_t<FV>>;
-
-template <typename FV>
-auto* allocate_functor_task_node(FV&& f) noexcept {
-    return new (std::nothrow) functor_task_node{ std::forward<FV>(f) };
-}
 
 } // namespace sl::exec

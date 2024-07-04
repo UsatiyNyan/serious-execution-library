@@ -18,10 +18,12 @@ project(
         HOMEPAGE_URL "TODO"
         LANGUAGES CXX)
 
-add_library(${PROJECT_NAME} INTERFACE)
+add_library(${PROJECT_NAME} STATIC
+    src/exec/st/executor.cpp)
+
 add_library(sl::exec ALIAS ${PROJECT_NAME})
 
-target_include_directories(${PROJECT_NAME} INTERFACE include)
+target_include_directories(${PROJECT_NAME} PUBLIC include)
 
 add_subdirectory(dependencies)
 
