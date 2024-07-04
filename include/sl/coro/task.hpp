@@ -4,12 +4,12 @@
 
 #pragma once
 
-#include "sl/exec/coro/detail.hpp"
+#include "sl/coro/detail.hpp"
 
 #include <coroutine>
 #include <libassert/assert.hpp>
 
-namespace sl::exec {
+namespace sl::coro {
 
 template <typename T>
 class task {

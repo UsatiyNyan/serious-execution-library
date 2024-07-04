@@ -10,7 +10,7 @@
 #include <tl/expected.hpp>
 #include <tl/optional.hpp>
 
-namespace sl::exec {
+namespace sl::coro {
 
 template <typename T>
 class generator {

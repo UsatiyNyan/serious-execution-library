@@ -2,11 +2,11 @@
 // Created by usatiynyan.
 //
 
-#include "sl/exec/coro.hpp"
+#include "sl/coro.hpp"
 
 #include <gtest/gtest.h>
 
-namespace sl::exec {
+namespace sl::coro {
 
 generator<int> create_iota(int i) {
     while (true) {
@@ -158,4 +158,4 @@ TEST(coro, tasksCallStack) {
     ASSERT_EQ(result, iterations);
 }
 
-} // namespace sl::exec
+} // namespace sl::coro

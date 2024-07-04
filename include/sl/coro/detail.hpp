@@ -9,7 +9,7 @@
 #include <tl/expected.hpp>
 #include <tl/optional.hpp>
 
-namespace sl::exec::detail {
+namespace sl::coro::detail {
 
 template <typename T>
 class promise_result_mixin_base {
