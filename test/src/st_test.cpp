@@ -12,7 +12,7 @@ TEST(st, singleTask) {
     st_executor executor;
     std::size_t counter = 0;
 
-    schedule(executor, [&counter](generic_executor&) noexcept { ++counter; });
+    schedule(executor, [&counter] noexcept { ++counter; });
     ASSERT_EQ(counter, 0);
 
     EXPECT_EQ(executor.execute_once(), 1);
@@ -25,7 +25,7 @@ TEST(st, manyTasks) {
     constexpr std::size_t expected = 1000;
 
     for (std::size_t i = 0; i != expected; ++i) {
-        schedule(executor, [&counter](generic_executor&) noexcept { ++counter; });
+        schedule(executor, [&counter] noexcept { ++counter; });
     }
     ASSERT_EQ(counter, 0);
 
@@ -45,10 +45,10 @@ TEST(st, manyTasks) {
 }
 
 void nesting_task(generic_executor& executor, std::size_t& counter, std::size_t expected) noexcept {
-    schedule(executor, [&counter, expected](generic_executor& executor_inner) noexcept {
+    schedule(executor, [&executor, &counter, expected] noexcept {
         if (counter < expected) {
             ++counter;
-            nesting_task(executor_inner, counter, expected);
+            nesting_task(executor, counter, expected);
         }
     });
 }

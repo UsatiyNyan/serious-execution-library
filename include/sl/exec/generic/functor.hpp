@@ -1,6 +1,5 @@
 //
 // Created by usatiynyan.
-// Since we are already allocating tasks on heap its fine to have virtual interfaces.
 //
 
 #pragma once
@@ -14,7 +13,9 @@
 namespace sl::exec {
 
 template <typename F>
-    requires(std::is_nothrow_invocable_r_v<void, F, generic_executor&>)
+concept FunctorTaskNodeRequirement = std::is_nothrow_invocable_r_v<void, F>;
+
+template <FunctorTaskNodeRequirement F>
 class functor_task_node : public generic_task_node {
     template <typename FV>
     explicit functor_task_node(FV&& f) : f_{ std::forward<FV>(f) } {}
@@ -25,8 +26,8 @@ public:
         return new (std::nothrow) functor_task_node{ std::forward<FV>(f) };
     }
 
-    generic_cleanup execute(generic_executor& executor) noexcept override {
-        f_(executor);
+    generic_cleanup execute() noexcept override {
+        f_();
         return generic_cleanup{ [this] { delete this; } };
     }
     generic_cleanup cancel() noexcept override {
@@ -40,14 +41,19 @@ private:
 template <typename FV>
 functor_task_node(FV&&) -> functor_task_node<std::decay_t<FV>>;
 
-template <typename FV>
-bool schedule(generic_executor& executor, FV&& f) {
-    using functor_type = functor_task_node<std::decay_t<FV>>;
-    auto* node = functor_type::allocate(std::forward<FV>(f));
-    if (ASSUME_VAL(node != nullptr)) {
-        return executor.schedule(node);
-    }
-    return false;
-}
+namespace detail {
 
+template <FunctorTaskNodeRequirement F>
+struct schedule<F> {
+    template <typename FV>
+    static bool impl(generic_executor& executor, FV&& f) {
+        auto* node = functor_task_node<F>::allocate(std::forward<FV>(f));
+        if (ASSUME_VAL(node != nullptr)) {
+            return executor.schedule(node);
+        }
+        return false;
+    }
+};
+
+} // namespace detail
 } // namespace sl::exec

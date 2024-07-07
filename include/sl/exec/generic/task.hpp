@@ -5,8 +5,11 @@
 
 #pragma once
 
+#include "sl/exec/generic/executor.hpp"
+
 #include <sl/meta/intrusive/forward_list.hpp>
 #include <sl/meta/lifetime/defer.hpp>
+#include <tl/optional.hpp>
 
 namespace sl::exec {
 
@@ -23,7 +26,19 @@ struct generic_task {
 
 struct generic_task_node
     : generic_task
-    , meta::intrusive_forward_list_node<generic_task_node> {};
+    , meta::intrusive_forward_list_node<generic_task_node> {
+
+    generic_cleanup execute(generic_executor& an_executor) noexcept override {
+        executor.emplace(an_executor);
+        return execute();
+    }
+
+    // oh fucking god no to hell with OOP
+    virtual generic_cleanup execute() noexcept = 0;
+
+public:
+    tl::optional<generic_executor&> executor;
+};
 
 using generic_task_list = meta::intrusive_forward_list<generic_task_node>;
 
