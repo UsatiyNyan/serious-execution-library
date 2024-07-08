@@ -24,7 +24,7 @@ namespace sl::exec {
 class st_executor : public generic_executor {
 public:
     ~st_executor() noexcept override;
-    bool schedule(generic_task_node* task_node) noexcept override;
+    void schedule(generic_task_node* task_node) noexcept override;
     void stop() noexcept override { is_stopped_ = true; }
 
     // execute finite batch of currently scheduled tasks

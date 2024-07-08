@@ -77,4 +77,19 @@ TEST(st, nestingTasks) {
     ASSERT_EQ(counter, expected);
 }
 
+TEST(st, asyncOne) {
+    st_executor executor;
+    std::size_t counter = 0;
+
+    auto coro = [&counter] -> async<void> {
+        ++counter;
+        co_return;
+    };
+    schedule(executor, coro());
+    ASSERT_EQ(counter, 0);
+
+    EXPECT_EQ(executor.execute_batch(), 1);
+    ASSERT_EQ(counter, 1);
+}
+
 } // namespace sl::exec

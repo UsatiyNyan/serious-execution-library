@@ -62,8 +62,12 @@ public:
         if (!return_value.has_value()) [[unlikely]] {
             std::rethrow_exception(return_value.error());
         }
-        return std::move(return_value).value();
+        if constexpr (std::is_void_v<T>) {
+            return;
+        } else {
+            return std::move(return_value).value();
+        }
     }
 };
 
-} // namespace sl::exec::detail
+} // namespace sl::coro::detail

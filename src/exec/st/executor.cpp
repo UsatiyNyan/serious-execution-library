@@ -16,18 +16,16 @@ st_executor::~st_executor() noexcept {
     }
 }
 
-bool st_executor::schedule(generic_task_node* task_node) noexcept {
-    if (!ASSUME_VAL(task_node != nullptr) || is_stopped_) {
-        return false;
+void st_executor::schedule(generic_task_node* task_node) noexcept {
+    if (ASSUME_VAL(task_node != nullptr) && !is_stopped_) {
+        queue_.push_back(task_node);
     }
-    queue_.push_back(task_node);
-    return true;
 }
 
 std::size_t st_executor::execute_batch() noexcept {
     generic_task_list batch = std::move(queue_); // clears queue_
     for (auto& task_node : batch) {
-        const auto cleanup = task_node.execute(*this);
+        const auto cleanup = task_node.execute();
     }
     return batch.size();
 }
@@ -39,7 +37,7 @@ std::size_t st_executor::execute_at_most(std::size_t n) noexcept {
         if (task_node == nullptr) {
             break;
         }
-        const auto cleanup = task_node->execute(*this);
+        const auto cleanup = task_node->execute();
     }
     return counter;
 }

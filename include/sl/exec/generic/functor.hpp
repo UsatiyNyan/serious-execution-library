@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include "sl/exec/generic/executor.hpp"
 #include "sl/exec/generic/task.hpp"
 
 #include <libassert/assert.hpp>
@@ -41,19 +40,4 @@ private:
 template <typename FV>
 functor_task_node(FV&&) -> functor_task_node<std::decay_t<FV>>;
 
-namespace detail {
-
-template <FunctorTaskNodeRequirement F>
-struct schedule<F> {
-    template <typename FV>
-    static bool impl(generic_executor& executor, FV&& f) {
-        auto* node = functor_task_node<F>::allocate(std::forward<FV>(f));
-        if (ASSUME_VAL(node != nullptr)) {
-            return executor.schedule(node);
-        }
-        return false;
-    }
-};
-
-} // namespace detail
 } // namespace sl::exec
