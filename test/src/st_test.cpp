@@ -92,4 +92,42 @@ TEST(st, asyncOne) {
     ASSERT_EQ(counter, 1);
 }
 
+TEST(st, asyncMany) {
+    st_executor executor;
+    std::size_t counter = 0;
+    constexpr std::size_t expected = 1000;
+
+    auto inner = [] -> async<std::size_t> { co_return 1; };
+    auto outer = [&counter, inner] -> async<void> {
+        for (std::size_t i = 0; i < expected; ++i) {
+            counter += co_await inner();
+        }
+        co_return;
+    };
+    schedule(executor, outer());
+    ASSERT_EQ(counter, 0);
+
+    EXPECT_EQ(executor.execute_batch(), 1);
+    ASSERT_EQ(counter, expected);
+}
+
+async<std::size_t> nesting_coro(std::size_t expected) {
+    if (expected == 0) {
+        co_return 0;
+    }
+    co_return 1 + co_await nesting_coro(expected - 1);
+}
+
+TEST(st, asyncNesting) {
+    st_executor executor;
+    constexpr std::size_t expected = 1'000'000;
+    std::size_t result = 0;
+
+    schedule(executor, [&result] -> async<void> { result = co_await nesting_coro(expected); }());
+    ASSERT_EQ(result, 0);
+
+    EXPECT_EQ(executor.execute_batch(), 1);
+    ASSERT_EQ(result, expected);
+}
+
 } // namespace sl::exec
