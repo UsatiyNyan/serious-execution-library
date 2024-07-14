@@ -24,7 +24,7 @@ template <FunctorTaskNodeRequirement F>
 struct schedule<F> {
     template <typename FV>
     static void impl(generic_executor& executor, FV&& f) {
-        auto* node = functor_task_node<F>::allocate(std::forward<FV>(f));
+        auto* node = allocate_functor_task_node(std::forward<FV>(f));
         ASSERT(node != nullptr);
         executor.schedule(node);
     }

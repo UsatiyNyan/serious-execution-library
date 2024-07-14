@@ -16,14 +16,9 @@ concept FunctorTaskNodeRequirement = std::is_nothrow_invocable_r_v<void, F>;
 
 template <FunctorTaskNodeRequirement F>
 class functor_task_node : public generic_task_node {
-    template <typename FV>
-    explicit functor_task_node(FV&& f) : f_{ std::forward<FV>(f) } {}
-
 public:
     template <typename FV>
-    static functor_task_node* allocate(FV&& f) noexcept {
-        return new (std::nothrow) functor_task_node{ std::forward<FV>(f) };
-    }
+    explicit functor_task_node(FV&& f) : f_{ std::forward<FV>(f) } {}
 
     generic_cleanup execute() noexcept override {
         f_();
@@ -38,6 +33,8 @@ private:
 };
 
 template <typename FV>
-functor_task_node(FV&&) -> functor_task_node<std::decay_t<FV>>;
+auto allocate_functor_task_node(FV&& f) {
+    return new (std::nothrow) functor_task_node<std::decay_t<FV>>{ std::forward<FV>(f) };
+}
 
 } // namespace sl::exec

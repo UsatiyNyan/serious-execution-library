@@ -19,11 +19,11 @@
 
 #include "sl/exec/generic.hpp"
 
-namespace sl::exec {
+namespace sl::exec::st {
 
-class st_executor : public generic_executor {
+class executor : public generic_executor {
 public:
-    ~st_executor() noexcept override;
+    ~executor() noexcept override;
     void schedule(generic_task_node* task_node) noexcept override;
     void stop() noexcept override { is_stopped_ = true; }
 

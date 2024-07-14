@@ -6,4 +6,5 @@
 #pragma once
 
 #include "sl/exec/st/executor.hpp"
-#include "sl/exec/st/task.hpp"
+#include "sl/exec/st/future.hpp"
+#include "sl/exec/st/inline.hpp"

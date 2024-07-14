@@ -99,8 +99,10 @@ public:
 
     // vvv compiler hooks
     bool await_ready() noexcept { return false; }
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> continuation) noexcept {
+    template <typename U>
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<async_promise<U>> continuation) {
         ASSERT(!handle_.done());
+        handle_.promise().executor = continuation.promise().executor;
         handle_.promise().continuation = continuation;
         return handle_;
     }

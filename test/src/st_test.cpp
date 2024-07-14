@@ -9,7 +9,7 @@
 namespace sl::exec {
 
 TEST(st, singleTask) {
-    st_executor executor;
+    st::executor executor;
     std::size_t counter = 0;
 
     schedule(executor, [&counter] noexcept { ++counter; });
@@ -20,7 +20,7 @@ TEST(st, singleTask) {
 }
 
 TEST(st, manyTasks) {
-    st_executor executor;
+    st::executor executor;
     std::size_t counter = 0;
     constexpr std::size_t expected = 1000;
 
@@ -54,7 +54,7 @@ void nesting_task(generic_executor& executor, std::size_t& counter, std::size_t 
 }
 
 TEST(st, nestingTasks) {
-    st_executor executor;
+    st::executor executor;
     std::size_t counter = 0;
     constexpr std::size_t expected = 1000;
     nesting_task(executor, counter, expected);
@@ -78,7 +78,7 @@ TEST(st, nestingTasks) {
 }
 
 TEST(st, asyncOne) {
-    st_executor executor;
+    st::executor executor;
     std::size_t counter = 0;
 
     auto coro = [&counter] -> async<void> {
@@ -93,7 +93,7 @@ TEST(st, asyncOne) {
 }
 
 TEST(st, asyncMany) {
-    st_executor executor;
+    st::executor executor;
     std::size_t counter = 0;
     constexpr std::size_t expected = 1000;
 
@@ -119,7 +119,7 @@ async<std::size_t> nesting_coro(std::size_t expected) {
 }
 
 TEST(st, asyncNesting) {
-    st_executor executor;
+    st::executor executor;
     constexpr std::size_t expected = 1'000'000;
     std::size_t result = 0;
 
@@ -128,6 +128,77 @@ TEST(st, asyncNesting) {
 
     EXPECT_EQ(executor.execute_batch(), 1);
     ASSERT_EQ(result, expected);
+}
+
+TEST(st, futureContractInline) {
+    {
+        auto [f, p] = st::make_contract<std::monostate>();
+        bool done = false;
+
+        std::move(p).set_value();
+        std::move(f).set_callback(st::inline_executor::instance(), [&done](std::monostate) noexcept { done = true; });
+
+        ASSERT_TRUE(done);
+    }
+    {
+        auto [f, p] = st::make_contract<std::monostate>();
+        bool done = false;
+
+        std::move(f).set_callback(st::inline_executor::instance(), [&done](std::monostate) noexcept { done = true; });
+        ASSERT_FALSE(done);
+
+        std::move(p).set_value();
+        ASSERT_TRUE(done);
+    }
+}
+
+TEST(st, futureContract) {
+    st::executor executor;
+    auto [f, p] = st::make_contract<std::monostate>();
+    bool done = false;
+
+    std::move(f).set_callback(executor, [&done](std::monostate) noexcept { done = true; });
+    ASSERT_FALSE(done);
+    std::move(p).set_value();
+    ASSERT_FALSE(done);
+    EXPECT_EQ(executor.execute_batch(), 1);
+    ASSERT_TRUE(done);
+}
+
+TEST(st, futureAwait) {
+    const auto task = [](bool& started, bool& ended, int& result, st::future<int> f) -> async<void> {
+        started = true;
+        std::cout << "start calculation" << std::endl;
+        result = co_await std::move(f);
+        std::cout << "calculation finished: " << result << std::endl;
+        ended = true;
+    };
+
+    bool started = false;
+    bool ended = false;
+    int result = 0;
+    auto [f, p] = st::make_contract<int>();
+    auto coro = task(started, ended, result, std::move(f));
+
+    ASSERT_FALSE(started);
+
+    st::executor executor;
+    schedule(executor, std::move(coro));
+
+    EXPECT_EQ(executor.execute_batch(), 1);
+    ASSERT_TRUE(started);
+    ASSERT_FALSE(ended);
+
+    EXPECT_EQ(executor.execute_batch(), 0);
+    ASSERT_FALSE(ended);
+
+    std::move(p).set_value(42);
+    ASSERT_EQ(result, 0);
+    ASSERT_FALSE(ended);
+
+    EXPECT_EQ(executor.execute_batch(), 1);
+    ASSERT_EQ(result, 42);
+    ASSERT_TRUE(ended);
 }
 
 } // namespace sl::exec
