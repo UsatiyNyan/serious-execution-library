@@ -201,4 +201,43 @@ TEST(st, futureAwait) {
     ASSERT_TRUE(ended);
 }
 
+TEST(st, combinatorsFirst) {
+    auto [f1, p1] = st::make_contract<int>();
+    auto [f2, p2] = st::make_contract<int>();
+
+    int result = 0;
+    st::first(st::inline_executor::instance(), std::move(f1), std::move(f2))
+        .set_callback(st::inline_executor::instance(), [&result](int x) noexcept { result = x; });
+    ASSERT_EQ(result, 0);
+
+    std::move(p2).set_value(42);
+    ASSERT_EQ(result, 42);
+
+    std::move(p1).set_value(13);
+    ASSERT_EQ(result, 42);
+}
+
+TEST(st, combinatorsAll) {
+    auto [f1, p1] = st::make_contract<int>();
+    auto [f2, p2] = st::make_contract<std::string>();
+
+    int result1 = 0;
+    std::string result2{};
+    st::all(st::inline_executor::instance(), std::move(f1), std::move(f2))
+        .set_callback(st::inline_executor::instance(), [&result1, &result2](std::tuple<int, std::string> xy) noexcept {
+            result1 = std::get<0>(xy);
+            result2 = std::get<1>(xy);
+        });
+    ASSERT_EQ(result1, 0);
+    ASSERT_EQ(result2, "");
+
+    std::move(p1).set_value(42);
+    ASSERT_EQ(result1, 0);
+    ASSERT_EQ(result2, "");
+
+    std::move(p2).set_value("the answer");
+    ASSERT_EQ(result1, 42);
+    ASSERT_EQ(result2, "the answer");
+}
+
 } // namespace sl::exec
