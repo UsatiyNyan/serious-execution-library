@@ -14,12 +14,15 @@ sl_project_prologue(
 project(
         serious-execution-library
         VERSION 0.0.1
-        DESCRIPTION "coroutines, futures, async, parallelism"
+        DESCRIPTION "coroutines, futures, async, parallelism, exclusively for linux for now"
         HOMEPAGE_URL "TODO"
         LANGUAGES CXX)
 
 add_library(${PROJECT_NAME} STATIC
-    src/exec/st/executor.cpp)
+    src/exec/st/executor.cpp
+    src/io/file.cpp
+    src/io/epoll.cpp
+    src/io/socket.cpp)
 
 add_library(sl::exec ALIAS ${PROJECT_NAME})
 
