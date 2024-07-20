@@ -18,6 +18,9 @@ namespace sl::io {
 
 class file : public meta::immovable {
 public:
+    class view;
+
+public:
     explicit file(int fd) : fd_{ tl::in_place, fd } {}
     file(file&& other) : fd_{ std::exchange(other.fd_, tl::nullopt) } {}
     ~file() noexcept;
@@ -30,6 +33,17 @@ public:
 
 private:
     tl::optional<int> fd_{};
+};
+
+class file::view {
+public:
+    explicit view(int fd) : fd_{ fd } {}
+    explicit view(const file& a_file) : fd_{ a_file.internal() } {}
+
+    [[nodiscard]] int internal() const { return fd_; }
+
+private:
+    int fd_;
 };
 
 } // namespace sl::io

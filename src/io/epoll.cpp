@@ -20,6 +20,10 @@ tl::expected<epoll, std::error_code> epoll::create() {
 }
 
 tl::expected<tl::monostate, std::error_code> epoll::ctl(op an_op, const file& a_file, epoll_event an_event) {
+    return ctl(an_op, file::view{ a_file }, an_event);
+}
+
+tl::expected<tl::monostate, std::error_code> epoll::ctl(op an_op, file::view a_file, epoll_event an_event) {
     const int result = epoll_ctl(handle_.internal(), static_cast<int>(an_op), a_file.internal(), &an_event);
     if (result == -1) {
         return tl::make_unexpected(detail::make_error_code_from_errno());
