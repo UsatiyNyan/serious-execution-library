@@ -18,7 +18,6 @@ auto parse_args(int argc, const char* argv[]) {
     );
 }
 
-
 int main(int argc, const char* argv[]) {
     const auto [port, max_clients] = parse_args(argc, argv);
 
@@ -44,14 +43,14 @@ int main(int argc, const char* argv[]) {
             std::array<std::byte, 1024> buffer{};
 
             const auto read_result = co_await conn.read(buffer);
-            if (!read_result.has_value()) {
+            if (!read_result.has_value() || *read_result == 0) {
                 break;
             }
             std::string_view string_view{ reinterpret_cast<char*>(buffer.data()), *read_result };
-            std::cout << "got:'" << string_view << "'\n";
+            std::cout << "got:{" << string_view << "}\n";
 
             const auto write_result = co_await conn.write(std::span{ buffer.data(), *read_result });
-            if (!write_result.has_value()) {
+            if (!write_result.has_value() || *write_result == 0) {
                 break;
             }
             std::cout << "read: " << *read_result << " written: " << *write_result << "\n";

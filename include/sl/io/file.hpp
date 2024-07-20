@@ -31,6 +31,8 @@ public:
     [[nodiscard]] tl::expected<std::uint32_t, std::error_code> read(std::span<std::byte> buffer);
     [[nodiscard]] tl::expected<std::uint32_t, std::error_code> write(std::span<const std::byte> buffer);
 
+    [[nodiscard]] tl::expected<std::int32_t, std::error_code> fcntl(std::int32_t op, std::int32_t arg);
+
 private:
     tl::optional<int> fd_{};
 };

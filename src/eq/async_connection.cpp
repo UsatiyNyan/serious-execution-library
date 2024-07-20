@@ -22,7 +22,7 @@ void async_connection::handle_read_impl() {
         return;
     }
     auto& [buffer, promise] = read_state_.value();
-    auto read_result = connection_.handle.read(buffer);
+    auto read_result = connection_.socket.handle.read(buffer);
     if (!read_result.has_value()) {
         const auto ec = read_result.error();
         if (ec == std::errc::resource_unavailable_try_again || ec == std::errc::operation_would_block) {
@@ -40,7 +40,7 @@ void async_connection::handle_write_impl() {
         return;
     }
     auto& [buffer, promise] = write_state_.value();
-    auto write_result = connection_.handle.write(buffer);
+    auto write_result = connection_.socket.handle.write(buffer);
     if (!write_result.has_value()) {
         const auto ec = write_result.error();
         if (ec == std::errc::resource_unavailable_try_again || ec == std::errc::operation_would_block) {

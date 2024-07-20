@@ -24,7 +24,7 @@ public:
     void handle_read();
     void handle_write();
 
-    [[nodiscard]] const io::file& handle() const { return connection_.handle; }
+    [[nodiscard]] const io::file& handle() const { return connection_.socket.handle; }
 
 private:
     void handle_read_impl();

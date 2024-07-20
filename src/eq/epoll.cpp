@@ -53,12 +53,19 @@ private:
     exec::generic_executor& executor,
     make_client_coro_type make_client_coro
 ) {
+    const bool is_blocking = server
+                                 .socket //
+                                 .get_blocking()
+                                 .map_error([](std::error_code ec) { PANIC(ec); })
+                                 .value();
+
     auto* server_handler = allocate_handler( //
         [&epoll,
          &server,
          &executor,
          make_client_coro = std::move(make_client_coro),
-         close_server = meta::defer{ [&epoll, handle = io::file::view{ server.handle }] {
+         is_blocking,
+         close_server = meta::defer{ [&epoll, handle = io::file::view{ server.socket.handle }] {
              epoll //
                  .ctl(io::epoll::op::DEL, handle, ::epoll_event{})
                  .map_error([](std::error_code ec) { PANIC(ec); });
@@ -77,7 +84,9 @@ private:
                 }
 
                 auto connection = std::move(accept_result).value();
-                const io::file::view handle_view{ connection.handle };
+                connection.socket.set_blocking(is_blocking).map_error([](std::error_code ec) { PANIC(ec); });
+
+                const io::file::view handle_view{ connection.socket.handle };
 
                 auto* a_connection_handler =
                     new (std::nothrow) connection_handler{ epoll, async_connection{ std::move(connection) } };
@@ -114,7 +123,7 @@ void setup_server_handler(
     epoll
         .ctl(
             io::epoll::op::ADD,
-            server.handle,
+            server.socket.handle,
             detail::make_server_handler(epoll, server, executor, std::move(make_client_coro))
         )
         .map_error([](std::error_code ec) { PANIC(ec); });
