@@ -17,7 +17,7 @@ tl::expected<socket, std::error_code> socket::create(std::int32_t domain, std::i
     if (sfd == -1) {
         return tl::make_unexpected(detail::make_error_code_from_errno());
     }
-    return socket{ .handle{ sfd } };
+    return socket{ .handle{ file{ sfd } } };
 }
 
 tl::expected<tl::monostate, std::error_code> socket::set_opt(std::int32_t level, std::int32_t name, std::int32_t opt) {
@@ -63,7 +63,7 @@ tl::expected<socket::connection, std::error_code> socket::listening_server::acce
     }
     ASSERT(addrlen == sizeof(address));
     return socket::connection{
-        .handle{ cfd },
+        .handle{ file{ cfd } },
         .address = address,
     };
 }

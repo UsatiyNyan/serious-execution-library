@@ -22,10 +22,16 @@ public:
 
     generic_cleanup execute() noexcept override {
         f_();
-        return generic_cleanup{ [this] { delete this; } };
+        return generic_cleanup{ [this] {
+            ASSUME(this != nullptr);
+            delete this;
+        } };
     }
     generic_cleanup cancel() noexcept override {
-        return generic_cleanup{ [this] { delete this; } };
+        return generic_cleanup{ [this] {
+            ASSUME(this != nullptr);
+            delete this;
+        } };
     }
 
 private:

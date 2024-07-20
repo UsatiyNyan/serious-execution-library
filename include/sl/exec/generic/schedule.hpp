@@ -33,11 +33,12 @@ struct schedule<F> {
 template <>
 struct schedule<async<void>> {
     static void impl(generic_executor& executor, async<void> coro) {
-        constexpr auto trampoline = [](generic_executor& executor, async<void> coro) noexcept -> async<void> {
-            co_await on(executor);
-            co_await std::move(coro);
-        };
         trampoline(executor, std::move(coro)).release().resume();
+    }
+
+    static async<void> trampoline(generic_executor& executor, async<void> coro) noexcept {
+        co_await on(executor);
+        co_await std::move(coro);
     }
 };
 
