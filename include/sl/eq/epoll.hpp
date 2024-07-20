@@ -21,7 +21,7 @@ using make_client_coro_type = fu2::function_base<
     /*HasStrongExceptGuarantee=*/true,
     exec::async<void>(async_connection::view async_connection_view)>;
 
-::epoll_event make_server_handler(
+void setup_server_handler(
     io::epoll& epoll,
     io::socket::server& server,
     exec::generic_executor& executor,

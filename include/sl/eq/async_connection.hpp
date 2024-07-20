@@ -27,9 +27,15 @@ public:
     [[nodiscard]] const io::file& handle() const { return connection_.handle; }
 
 private:
+    void handle_read_impl();
+    void handle_write_impl();
+
+private:
     io::socket::connection connection_;
     tl::optional<std::tuple<std::span<std::byte>, promise_type>> read_state_{};
+    bool can_read_ = false;
     tl::optional<std::tuple<std::span<const std::byte>, promise_type>> write_state_{};
+    bool can_write_ = false;
 };
 
 class async_connection::view {

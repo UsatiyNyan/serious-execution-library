@@ -13,37 +13,39 @@
 namespace sl::eq {
 namespace detail {
 
-::epoll_event make_client_handler(io::epoll& epoll, async_connection an_async_connection) {
-    auto* client_handler = allocate_handler( //
-        [an_async_connection = std::move(an_async_connection),
-         close_connection = meta::defer{ [&epoll, handle = io::file::view{ an_async_connection.handle() }] {
-             epoll //
-                 .ctl(io::epoll::op::DEL, handle, ::epoll_event{})
-                 .map_error([](std::error_code ec) { PANIC(ec); });
-         } }] //
-        (io::epoll::event_flag events) mutable noexcept {
-            constexpr io::epoll::event_flag errors_flag{ EPOLLRDHUP | EPOLLHUP | EPOLLERR };
-            if (events & errors_flag) {
-                // TODO: can get EPOLLERR from getsockopt
-                return handler_result::END;
-            }
-            if (events & EPOLLIN) {
-                an_async_connection.handle_read();
-            } else if (events & EPOLLOUT) {
-                an_async_connection.handle_write();
-            } else {
-                PANIC(events, "connection: handle unknown events");
-            }
-            return handler_result::CONTINUE;
-        }
-    );
-    return ::epoll_event{
-        .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR | EPOLLET,
-        .data{ .ptr = client_handler },
-    };
-}
+class connection_handler : public handler_base {
+public:
+    connection_handler(io::epoll& epoll, async_connection an_async_connection)
+        : epoll_{ epoll }, async_connection_{ std::move(an_async_connection) } {}
 
-} // namespace detail
+    [[nodiscard]] handler_result execute(io::epoll::event_flag events) noexcept override {
+        constexpr io::epoll::event_flag errors_flag{ EPOLLRDHUP | EPOLLHUP | EPOLLERR };
+        if (events & errors_flag) {
+            // TODO: can get EPOLLERR from getsockopt
+            return handler_result::END;
+        }
+        if (events & EPOLLIN) {
+            async_connection_.handle_read();
+        } else if (events & EPOLLOUT) {
+            async_connection_.handle_write();
+        } else {
+            PANIC(events, "connection: handle unknown events");
+        }
+        return handler_result::CONTINUE;
+    }
+
+    ~connection_handler() override {
+        epoll_ //
+            .ctl(io::epoll::op::DEL, async_connection_.handle(), ::epoll_event{})
+            .map_error([](std::error_code ec) { PANIC(ec); });
+    };
+
+    [[nodiscard]] auto async_connection_view() { return async_connection::view{ async_connection_ }; }
+
+private:
+    io::epoll& epoll_;
+    async_connection async_connection_;
+};
 
 ::epoll_event make_server_handler(
     io::epoll& epoll,
@@ -64,7 +66,6 @@ namespace detail {
         (io::epoll::event_flag events) mutable noexcept {
             while (true) {
                 auto accept_result = server.accept();
-
                 if (!accept_result.has_value()) {
                     const auto ec = std::move(accept_result).error();
                     if (ec == std::errc::resource_unavailable_try_again || ec == std::errc::operation_would_block) {
@@ -78,17 +79,21 @@ namespace detail {
                 auto connection = std::move(accept_result).value();
                 const io::file::view handle_view{ connection.handle };
 
-                async_connection an_async_connection{ std::move(connection) };
-                async_connection::view an_async_connection_view{ an_async_connection };
-
+                auto* a_connection_handler =
+                    new (std::nothrow) connection_handler{ epoll, async_connection{ std::move(connection) } };
+                ASSERT(a_connection_handler != nullptr);
                 epoll
                     .ctl(
                         io::epoll::op::ADD,
                         handle_view,
-                        detail::make_client_handler(epoll, std::move(an_async_connection))
+                        ::epoll_event{
+                            .events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR | EPOLLET,
+                            .data{ .ptr = a_connection_handler },
+                        }
                     )
                     .map_error([](std::error_code ec) { PANIC(ec); });
-                exec::schedule(executor, make_client_coro(an_async_connection_view));
+
+                exec::schedule(executor, make_client_coro(a_connection_handler->async_connection_view()));
             }
         }
     );
@@ -96,6 +101,23 @@ namespace detail {
         .events = EPOLLIN | EPOLLET,
         .data{ .ptr = server_handler },
     };
+}
+
+} // namespace detail
+
+void setup_server_handler(
+    io::epoll& epoll,
+    io::socket::server& server,
+    exec::generic_executor& executor,
+    make_client_coro_type make_client_coro
+) {
+    epoll
+        .ctl(
+            io::epoll::op::ADD,
+            server.handle,
+            detail::make_server_handler(epoll, server, executor, std::move(make_client_coro))
+        )
+        .map_error([](std::error_code ec) { PANIC(ec); });
 }
 
 void execute_events(std::span<const epoll_event> events) {
