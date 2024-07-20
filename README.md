@@ -8,4 +8,11 @@ Stands for single-threaded. An experiment in creating a single-threaded versions
 - `coroutine`
 - `event-queue`/`epoll`
 
-Fully working single-threaded TCP echo-server on epoll is here: examples/src/00_epoll_st.cpp.
+Fully working single-threaded TCP echo-server on epoll is [here](examples/src/00_epoll_st.cpp).
+
+# BUILD
+
+```bash
+cmake -DCMAKE_BUILD_TYPE=Release -S . -B ./build
+cmake --build ./build --parallel "$(nproc)" --target serious-execution-library_00_epoll_st
+```
