@@ -5,7 +5,6 @@
 #pragma once
 
 #include "sl/exec/st/future.hpp"
-#include "sl/io/file.hpp"
 #include "sl/io/socket.hpp"
 
 namespace sl::eq {
@@ -21,21 +20,20 @@ public:
 public:
     explicit async_connection(io::socket::connection connection) : connection_{ std::move(connection) } {}
 
+    void handle_error();
+    void handle_close();
     void handle_read();
     void handle_write();
 
-    [[nodiscard]] const io::file& handle() const { return connection_.socket.handle; }
+    [[nodiscard]] const auto& socket() const { return connection_.socket; }
 
 private:
-    void handle_read_impl();
-    void handle_write_impl();
+    void handle_error_impl(std::error_code ec);
 
 private:
     io::socket::connection connection_;
     tl::optional<std::tuple<std::span<std::byte>, promise_type>> read_state_{};
-    bool can_read_ = false;
     tl::optional<std::tuple<std::span<const std::byte>, promise_type>> write_state_{};
-    bool can_write_ = false;
 };
 
 class async_connection::view {

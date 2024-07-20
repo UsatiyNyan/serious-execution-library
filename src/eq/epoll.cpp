@@ -19,9 +19,12 @@ public:
         : epoll_{ epoll }, async_connection_{ std::move(an_async_connection) } {}
 
     [[nodiscard]] handler_result execute(io::epoll::event_flag events) noexcept override {
-        constexpr io::epoll::event_flag errors_flag{ EPOLLRDHUP | EPOLLHUP | EPOLLERR };
-        if (events & errors_flag) {
-            // TODO: can get EPOLLERR from getsockopt
+        if (events & EPOLLERR) {
+            async_connection_.handle_error();
+            return handler_result::END;
+        }
+        if (events & (EPOLLRDHUP | EPOLLHUP)) {
+            async_connection_.handle_close();
             return handler_result::END;
         }
         if (events & EPOLLIN) {
@@ -36,7 +39,7 @@ public:
 
     ~connection_handler() override {
         epoll_ //
-            .ctl(io::epoll::op::DEL, async_connection_.handle(), ::epoll_event{})
+            .ctl(io::epoll::op::DEL, async_connection_.socket().handle, ::epoll_event{})
             .map_error([](std::error_code ec) { PANIC(ec); });
     };
 

@@ -7,17 +7,32 @@
 
 namespace sl::eq {
 
+void async_connection::handle_error() {
+    const auto socket_error = connection_.socket.get_opt(SOL_SOCKET, SO_ERROR);
+    handle_error_impl(
+        socket_error.has_value() //
+            ? std::make_error_code(std::errc{ socket_error.value() })
+            : socket_error.error()
+    );
+}
+
+void async_connection::handle_close() { handle_error_impl(std::make_error_code(std::errc::connection_reset)); }
+
+void async_connection::handle_error_impl(std::error_code ec) {
+    const auto error = tl::make_unexpected(ec);
+    if (read_state_.has_value()) {
+        auto& [buffer, promise] = read_state_.value();
+        std::move(promise).set_value(error);
+        read_state_.reset();
+    }
+    if (write_state_.has_value()) {
+        auto& [buffer, promise] = write_state_.value();
+        std::move(promise).set_value(error);
+        write_state_.reset();
+    }
+}
+
 void async_connection::handle_read() {
-    can_read_ = true;
-    handle_read_impl();
-}
-
-void async_connection::handle_write() {
-    can_write_ = true;
-    handle_write_impl();
-}
-
-void async_connection::handle_read_impl() {
     if (!read_state_.has_value()) {
         return;
     }
@@ -32,10 +47,9 @@ void async_connection::handle_read_impl() {
     }
     std::move(promise).set_value(std::move(read_result));
     read_state_.reset();
-    can_read_ = false;
 }
 
-void async_connection::handle_write_impl() {
+void async_connection::handle_write() {
     if (!write_state_.has_value()) {
         return;
     }
@@ -50,14 +64,13 @@ void async_connection::handle_write_impl() {
     }
     std::move(promise).set_value(std::move(write_result));
     write_state_.reset();
-    can_write_ = false;
 }
 
 async_connection::future_type async_connection::view::read(std::span<std::byte> buffer) {
     auto [future, promise] = exec::st::make_contract<tl::expected<std::uint32_t, std::error_code>>();
     ASSERT(!ref_.read_state_.has_value());
     ref_.read_state_.emplace(buffer, std::move(promise));
-    ref_.handle_read_impl();
+    ref_.handle_read();
     return std::move(future);
 }
 
@@ -65,7 +78,7 @@ async_connection::future_type async_connection::view::write(std::span<const std:
     auto [future, promise] = exec::st::make_contract<tl::expected<std::uint32_t, std::error_code>>();
     ASSERT(!ref_.write_state_.has_value());
     ref_.write_state_.emplace(buffer, std::move(promise));
-    ref_.handle_write_impl();
+    ref_.handle_write();
     return std::move(future);
 }
 
