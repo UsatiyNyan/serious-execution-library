@@ -19,12 +19,7 @@ project(
         LANGUAGES CXX)
 
 add_library(${PROJECT_NAME} STATIC
-    src/exec/st/executor.cpp
-    src/io/file.cpp
-    src/io/epoll.cpp
-    src/io/socket.cpp
-    src/eq/async_connection.cpp
-    src/eq/epoll.cpp)
+    src/exec/st/executor.cpp)
 
 add_library(sl::exec ALIAS ${PROJECT_NAME})
 
