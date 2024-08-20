@@ -94,4 +94,13 @@ private:
     tl::optional<yield_type> maybe_yield_;
 };
 
-} // namespace sl::exec
+template <typename T>
+generator<std::pair<std::size_t, T>> enumerate(generator<T> a_generator) {
+    std::size_t index = 0;
+    while (auto maybe_value = a_generator.next_or_throw()) {
+        co_yield std::make_pair(index, std::move(maybe_value).value());
+        ++index;
+    }
+};
+
+} // namespace sl::coro
