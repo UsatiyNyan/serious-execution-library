@@ -34,6 +34,23 @@ TEST(coro, generator) {
     EXPECT_EQ(maybe_14.value(), 14);
 }
 
+generator<int> create_iota(int begin, int end) {
+    for (int i = begin; i < end; ++i) {
+        co_yield i;
+    }
+}
+
+TEST(coro, generator_iterator) {
+    const int begin = 1;
+    const int end = 15;
+    int counter = begin;
+    for (const int iota : create_iota(begin, end)) {
+        EXPECT_EQ(counter, iota);
+        ++counter;
+    }
+    EXPECT_EQ(counter, end);
+}
+
 generator<int> create_nesting_iota(int begin, int end, int level = 0) {
     if (begin >= end) {
         co_return;

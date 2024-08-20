@@ -6,6 +6,7 @@
 
 #include <coroutine>
 #include <exception>
+#include <iterator>
 #include <libassert/assert.hpp>
 #include <tl/expected.hpp>
 #include <tl/optional.hpp>
@@ -19,6 +20,8 @@ public:
     class promise_type;
     using handle_type = std::coroutine_handle<promise_type>;
     // ^^^ compiler hooks
+
+    class iterator;
 
 private:
     explicit generator(handle_type handle) : handle_{ std::move(handle) } {}
@@ -44,6 +47,9 @@ public:
         handle_.promise().resume_impl(handle_);
         return std::move(handle_.promise()).get_yield_or_throw();
     }
+
+    [[nodiscard]] auto begin() { return iterator{ *this }; }
+    [[nodiscard]] auto end() { return std::default_sentinel; }
 
 private:
     handle_type handle_;
@@ -92,6 +98,43 @@ public:
 
 private:
     tl::optional<yield_type> maybe_yield_;
+};
+
+template <typename T>
+class generator<T>::iterator {
+public:
+    explicit iterator(generator<T>& self) : self_{ &self } { advance(); }
+
+    iterator& operator++() {
+        advance();
+        return *this;
+    }
+
+    iterator operator++(int) {
+        iterator tmp = *this;
+        advance();
+        return tmp;
+    }
+
+    [[nodiscard]] T& operator*() {
+        ASSERT(maybe_value_.has_value());
+        return maybe_value_.value();
+    }
+
+    [[nodiscard]] bool operator==(std::default_sentinel_t) const { return self_ == nullptr; }
+
+private:
+    void advance() {
+        ASSERT(self_ != nullptr);
+        maybe_value_ = self_->next_or_throw();
+        if (!maybe_value_.has_value()) {
+            self_ = nullptr; // signify end
+        }
+    }
+
+private:
+    generator<T>* self_;
+    tl::optional<T> maybe_value_;
 };
 
 template <typename T>
