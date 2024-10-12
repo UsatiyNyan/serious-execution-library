@@ -4,5 +4,4 @@
 
 #pragma once
 
-#include "sl/exec/generic.hpp"
-#include "sl/exec/st.hpp"
+#include "sl/exec/executor.hpp"
