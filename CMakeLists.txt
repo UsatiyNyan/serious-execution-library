@@ -19,7 +19,6 @@ project(
         LANGUAGES CXX)
 
 add_library(${PROJECT_NAME} STATIC
-    src/exec/executor/inline.cpp
     src/exec/executor/manual.cpp)
 
 add_library(sl::exec ALIAS ${PROJECT_NAME})
