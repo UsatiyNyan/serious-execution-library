@@ -4,4 +4,6 @@
 
 #pragma once
 
-#include "sl/exec/executor.hpp"
+// concepts and algorithms
+#include "sl/exec/model.hpp"
+#include "sl/exec/algo.hpp"

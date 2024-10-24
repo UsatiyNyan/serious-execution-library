@@ -1,6 +1,5 @@
 //
 // Created by usatiynyan.
-// Since we are already allocating tasks on heap its fine to have virtual interfaces.
 //
 
 #pragma once

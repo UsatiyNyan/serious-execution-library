@@ -11,15 +11,15 @@
 
 #pragma once
 
-#include "sl/exec/executor/executor.hpp"
+#include "sl/exec/model/executor.hpp"
 
 namespace sl::exec {
 
-class manual_executor final : public executor {
-public:
+struct manual_executor final : executor {
     ~manual_executor() noexcept override;
 
     void schedule(task_node* task_node) noexcept override;
+    void stop() noexcept override;
 
     // execute finite batch of currently scheduled tasks
     std::size_t execute_batch() noexcept;
