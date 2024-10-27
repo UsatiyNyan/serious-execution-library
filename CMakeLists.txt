@@ -19,7 +19,11 @@ project(
         LANGUAGES CXX)
 
 add_library(${PROJECT_NAME} STATIC
-    src/exec/executor/manual.cpp)
+    src/algo/sched/manual.cpp
+    src/algo/event/nowait.cpp
+    src/algo/event/atomic.cpp
+    src/algo/event/mutex.cpp
+    )
 
 add_library(sl::exec ALIAS ${PROJECT_NAME})
 

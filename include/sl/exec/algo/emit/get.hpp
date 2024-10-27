@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "sl/exec/algo/event.hpp"
 #include "sl/exec/model/concept.hpp"
 
 namespace sl::exec {
@@ -50,7 +51,7 @@ struct get_emit {
 
 } // namespace detail
 
-template <Event EventT>
+template <Event EventT = default_event>
 constexpr auto get() {
     return detail::get_emit<EventT>{};
 }

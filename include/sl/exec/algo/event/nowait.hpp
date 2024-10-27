@@ -10,9 +10,8 @@
 namespace sl::exec {
 
 struct nowait_event {
-    void set() { is_set_ = true; }
-
-    void wait() { ASSERT(is_set_); }
+    void set();
+    void wait(); 
 
 private:
     bool is_set_ = false;
