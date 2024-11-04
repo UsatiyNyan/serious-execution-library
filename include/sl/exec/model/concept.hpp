@@ -15,46 +15,45 @@
 
 namespace sl::exec {
 
-template <typename EventT>
-concept Event = requires(EventT& event) {
-    event.set();
-    event.wait();
-};
+template <typename ValueT, typename ErrorT>
+struct slot {
+    virtual ~slot() = default;
 
-template <typename SlotT, typename ValueT, typename ErrorT>
-concept Slot = requires(SlotT& slot, ValueT&& value, ErrorT&& error) {
-    slot.set_value(std::move(value));
-    slot.set_error(std::move(error));
-    slot.cancel(); // TODO: maybe continuation also
-};
-
-template <typename SignalT>
-concept Signal = requires(SignalT signal) {
-    typename SignalT::value_type;
-    typename SignalT::error_type;
-    { signal.get_executor() } -> std::same_as<executor&>;
+    virtual void set_value(ValueT&&) & = 0;
+    virtual void set_error(ErrorT&&) & = 0;
+    virtual void cancel() & = 0;
 };
 
 template <typename ConnectionT>
 concept Connection = requires(ConnectionT& connection) { connection.emit(); };
 
-template <typename SignalT, typename SlotT>
-concept SignalTo = //
-    Signal<SignalT> && //
-    Slot<SlotT, typename SignalT::value_type, typename SignalT::error_type> && //
-    requires(SignalT& signal, SlotT&& slot) {
-        { signal.subscribe(std::move(slot)) } -> Connection;
-    };
+template <typename SignalT>
+concept Signal = requires(
+    SignalT& l_signal,
+    SignalT&& r_signal,
+    slot<typename SignalT::value_type, typename SignalT::error_type>& i_slot
+) {
+    typename SignalT::value_type;
+    typename SignalT::error_type;
+    { l_signal.get_executor() } -> std::same_as<executor&>;
+    { std::move(r_signal).subscribe(i_slot) } -> Connection;
+};
 
 template <typename SchedulerT>
 concept Scheduler = requires(SchedulerT& scheduler) {
     { scheduler.schedule() } -> Signal;
 };
 
-template <typename SignalT, typename SlotT>
-    requires SignalTo<SignalT, SlotT>
-constexpr Connection auto subscribe(SignalT& signal, SlotT&& slot) {
-    return signal.subscribe(std::move(slot));
-}
+template <typename EventT>
+concept Event = requires(EventT& event) {
+    event.set();
+    event.wait();
+};
+
+template <Signal SignalT>
+using ISlotFor = slot<typename SignalT::value_type, typename SignalT::error_type>;
+
+template <Signal SignalT, std::derived_from<ISlotFor<SignalT>> SlotT>
+using ConnectionFor = decltype(std::declval<SignalT&&>().subscribe(std::declval<SlotT&>()));
 
 } // namespace sl::exec

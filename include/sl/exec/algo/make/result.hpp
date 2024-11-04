@@ -12,10 +12,10 @@
 namespace sl::exec {
 namespace detail {
 
-template <typename ValueT, typename ErrorT, Slot<ValueT, ErrorT> SlotT>
+template <typename ValueT, typename ErrorT>
 struct [[nodiscard]] result_connection {
-    SlotT slot;
     meta::result<ValueT, ErrorT> result;
+    slot<ValueT, ErrorT>& slot;
 
     void emit() & noexcept {
         if (result.has_value()) {
@@ -33,11 +33,10 @@ struct [[nodiscard]] result_signal {
 
     meta::result<value_type, error_type> result;
 
-    template <Slot<value_type, error_type> SlotT>
-    Connection auto subscribe(SlotT&& slot) {
-        return result_connection<value_type, error_type, SlotT>{
-            .slot = std::move(slot),
+    Connection auto subscribe(slot<value_type, error_type>& slot) && {
+        return result_connection<value_type, error_type>{
             .result = std::move(result),
+            .slot = slot,
         };
     }
 

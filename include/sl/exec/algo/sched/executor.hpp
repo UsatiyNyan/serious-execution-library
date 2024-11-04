@@ -10,15 +10,18 @@
 namespace sl::exec {
 namespace detail {
 
-template <typename Slot>
 struct [[nodiscard]] executor_connection : task_node {
-    Slot slot;
-    executor& executor;
+    executor_connection(slot<sl::meta::unit, sl::meta::undefined>& slot, executor& executor)
+        : slot_{ slot }, executor_{ executor } {}
 
-    void emit() { executor.schedule(this); }
+    void emit() { executor_.schedule(this); }
 
-    void execute() noexcept override { slot.set_value(sl::meta::unit{}); }
-    void cancel() noexcept override { slot.cancel(); }
+    void execute() noexcept override { slot_.set_value(sl::meta::unit{}); }
+    void cancel() noexcept override { slot_.cancel(); }
+
+private:
+    slot<sl::meta::unit, sl::meta::undefined>& slot_;
+    executor& executor_;
 };
 
 struct [[nodiscard]] executor_signal {
@@ -27,11 +30,10 @@ struct [[nodiscard]] executor_signal {
 
     executor& executor_;
 
-    template <Slot<value_type, error_type> SlotT>
-    Connection auto subscribe(SlotT&& slot) & noexcept {
+    Connection auto subscribe(slot<value_type, error_type>& slot) && {
         return executor_connection{
-            .slot = std::move(slot),
-            .executor = get_executor(),
+            /* .slot = */ slot,
+            /* .executor = */ get_executor(),
         };
     }
 

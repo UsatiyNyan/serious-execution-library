@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "sl/exec/algo/seq/transform_connection.hpp"
+
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/model/executor.hpp"
 
@@ -12,31 +14,41 @@
 namespace sl::exec {
 namespace detail {
 
-template <typename ValueT, typename ErrorT, typename SlotT, typename F>
-struct [[nodiscard]] map_slot : task_node {
-    map_slot(SlotT&& slot, F&& functor, executor& executor)
-        : slot_{ std::move(slot) }, functor_{ std::move(functor) }, executor_{ executor } {}
+template <typename InputValueT, typename ValueT, typename ErrorT, typename F>
+struct [[nodiscard]] map_slot : slot<InputValueT, ErrorT> {
+    struct map_task : task_node {
+        explicit map_task(map_slot& self) : self_{ self } {}
 
-    void set_value(ValueT&& value) & {
-        maybe_value_.emplace(std::move(value));
-        executor_.schedule(this);
-    }
-    void set_error(ErrorT&& error) & { slot_.set_error(std::move(error)); }
-
-    void execute() noexcept override {
-        if (!ASSUME_VAL(maybe_value_.has_value())) {
-            return;
+        void execute() noexcept override {
+            if (!ASSUME_VAL(self_.maybe_value_.has_value())) {
+                return;
+            }
+            auto value = self_.functor_(std::move(self_.maybe_value_).value());
+            self_.slot_.set_value(std::move(value));
         }
-        auto value = functor_(std::move(maybe_value_).value());
-        slot_.set_value(std::move(value));
+        void cancel() noexcept override { self_.cancel(); };
+
+    private:
+        map_slot& self_;
+    };
+
+    map_slot(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
+        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
+
+    void set_value(InputValueT&& value) & override {
+        maybe_value_.emplace(std::move(value));
+        auto& task = maybe_task_.emplace(*this);
+        executor_.schedule(&task);
     }
-    void cancel() noexcept override { slot_.cancel(); }
+    void set_error(ErrorT&& error) & override { slot_.set_error(std::move(error)); }
+    void cancel() & override { slot_.cancel(); }
 
 private:
-    SlotT slot_;
     F functor_;
+    ::tl::optional<InputValueT> maybe_value_{};
+    ::tl::optional<map_task> maybe_task_{};
+    slot<ValueT, ErrorT>& slot_;
     executor& executor_;
-    ::tl::optional<ValueT> maybe_value_;
 };
 
 template <Signal SignalT, typename F>
@@ -47,13 +59,16 @@ struct [[nodiscard]] map_signal {
     SignalT signal;
     F functor;
 
-    template <Slot<value_type, error_type> SlotT>
-    Connection auto subscribe(SlotT&& slot) && {
-        return std::move(signal).subscribe(map_slot<typename SignalT::value_type, error_type, SlotT, F>{
-            /* .slot = */ std::move(slot),
-            /* .functor = */ std::move(functor),
-            /* .executor = */ get_executor(),
-        });
+    Connection auto subscribe(slot<value_type, error_type>& slot) && {
+        return transform_connection{
+            /* .signal = */ std::move(signal),
+            /* .slot = */
+            map_slot<typename SignalT::value_type, value_type, error_type, F>{
+                /* .functor = */ std::move(functor),
+                /* .slot = */ slot,
+                /* .executor = */ get_executor(),
+            },
+        };
     }
 
     executor& get_executor() { return signal.get_executor(); }
