@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include "sl/exec/algo/event.hpp"
 #include "sl/exec/model/concept.hpp"
 
 #include <tl/optional.hpp>
@@ -50,7 +49,7 @@ struct [[nodiscard]] get_emit {
 
 } // namespace detail
 
-template <Event EventT = default_event>
+template <Event EventT>
 constexpr auto get() {
     return detail::get_emit<EventT>{};
 }

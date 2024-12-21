@@ -2,7 +2,7 @@
 // Created by usatiynyan.
 //
 
-#include "sl/exec/algo/event/mutex.hpp"
+#include "sl/exec/thread/event/mutex.hpp"
 
 namespace sl::exec {
 

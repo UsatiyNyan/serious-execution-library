@@ -4,9 +4,9 @@
 
 #pragma once
 
-#include "sl/exec/algo/event/atomic.hpp"
-#include "sl/exec/algo/event/mutex.hpp"
-#include "sl/exec/algo/event/nowait.hpp"
+#include "sl/exec/thread/event/atomic.hpp"
+#include "sl/exec/thread/event/mutex.hpp"
+#include "sl/exec/thread/event/nowait.hpp"
 
 namespace sl::exec {
 

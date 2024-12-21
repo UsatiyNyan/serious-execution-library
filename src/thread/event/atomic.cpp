@@ -2,7 +2,7 @@
 // Created by usatiynyan.
 //
 
-#include "sl/exec/algo/event/atomic.hpp"
+#include "sl/exec/thread/event/atomic.hpp"
 
 namespace sl::exec {
 

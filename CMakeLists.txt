@@ -20,9 +20,9 @@ project(
 
 add_library(${PROJECT_NAME} STATIC
     src/algo/sched/manual.cpp
-    src/algo/event/nowait.cpp
-    src/algo/event/atomic.cpp
-    src/algo/event/mutex.cpp
+    src/thread/event/nowait.cpp
+    src/thread/event/atomic.cpp
+    src/thread/event/mutex.cpp
     src/thread/sync/wait_group.cpp
     )
 

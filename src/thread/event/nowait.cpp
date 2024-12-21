@@ -2,7 +2,7 @@
 // Created by usatiynyan.
 //
 
-#include "sl/exec/algo/event/nowait.hpp"
+#include "sl/exec/thread/event/nowait.hpp"
 
 #include <libassert/assert.hpp>
 
