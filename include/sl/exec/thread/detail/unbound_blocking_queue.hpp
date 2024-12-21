@@ -41,8 +41,9 @@ public:
 
     void close() {
         std::lock_guard lock{ m_ };
-        is_closed_ = true;
-        event_.notify_all();
+        if (!std::exchange(is_closed_, true)) {
+            event_.notify_all();
+        }
     }
 
 private:

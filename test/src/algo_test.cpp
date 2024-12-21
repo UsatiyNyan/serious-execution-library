@@ -5,60 +5,11 @@
 #include "sl/exec/algo.hpp"
 #include "sl/exec/model.hpp"
 #include "sl/exec/thread/event.hpp"
+#include "sl/exec/thread/pool/monolithic.hpp"
 
-#include <condition_variable>
 #include <gtest/gtest.h>
-#include <mutex>
-#include <thread>
 
 namespace sl::exec {
-
-struct background_executor final : executor {
-    background_executor()
-        : t_{ [this] {
-              while (auto maybe_task = worker_retrieve_task()) {
-                  (*maybe_task)->execute();
-              }
-          } } {}
-
-    ~background_executor() noexcept override {
-        stop();
-        t_.join();
-    }
-
-    void schedule(task_node* task_node) noexcept override {
-        {
-            std::unique_lock ul{ m_ };
-            tq_.push_back(task_node);
-        }
-        cv_.notify_one();
-    }
-
-    void stop() noexcept override {
-        std::unique_lock ul{ m_ };
-        is_running_ = false;
-        cv_.notify_one();
-    }
-
-private:
-    tl::optional<task_node*> worker_retrieve_task() {
-        std::unique_lock ul{ m_ };
-        while (is_running_ && tq_.empty()) {
-            cv_.wait(ul);
-        }
-        if (!is_running_) {
-            return tl::nullopt;
-        }
-        return tq_.pop_front();
-    }
-
-private:
-    std::mutex m_;
-    std::condition_variable cv_;
-    std::thread t_;
-    bool is_running_ = true;
-    task_list tq_;
-};
 
 TEST(conn, valueSignal) {
     const tl::optional<meta::result<int, meta::unit>> maybe_result = //
@@ -105,7 +56,7 @@ TEST(algo, orElse) {
 
 
 TEST(algo, threadPool) {
-    background_executor background_executor;
+    monolithic_thread_pool background_executor{ thread_pool_config::with_hw_limit(1u) };
     auto scheduler = as_scheduler(background_executor);
     const tl::optional<meta::result<std::thread::id, meta::undefined>> maybe_result =
         scheduler.schedule() //
