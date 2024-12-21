@@ -5,9 +5,10 @@
 #include "sl/exec/algo.hpp"
 #include "sl/exec/model.hpp"
 #include "sl/exec/thread/event.hpp"
-#include "sl/exec/thread/pool/monolithic.hpp"
 
 #include <gtest/gtest.h>
+#include <sl/meta/func/undefined.hpp>
+#include <sl/meta/monad/result.hpp>
 
 namespace sl::exec {
 
@@ -54,15 +55,37 @@ TEST(algo, orElse) {
     ASSERT_EQ(*maybe_result, meta::err(std::string{ "43" }));
 }
 
+TEST(algo, manualAsScheduler) {
+    // looks dumb, might need to stick to schedule(...) API
+    manual_executor executor;
 
-TEST(algo, threadPool) {
-    monolithic_thread_pool background_executor{ thread_pool_config::with_hw_limit(1u) };
-    auto scheduler = as_scheduler(background_executor);
-    const tl::optional<meta::result<std::thread::id, meta::undefined>> maybe_result =
-        scheduler.schedule() //
-        | map([](meta::unit) { return std::this_thread::get_id(); }) //
-        | get<atomic_event>();
-    ASSERT_NE(*maybe_result, std::this_thread::get_id());
+    bool done = false;
+    as_scheduler(executor).schedule() //
+        | map([&done](meta::unit) {
+              done = true;
+              return meta::unit{};
+          })
+        | detach();
+
+    ASSERT_FALSE(done);
+    executor.execute_at_most(1);
+    ASSERT_FALSE(done);
+    executor.execute_at_most(1);
+    ASSERT_TRUE(done);
+}
+
+TEST(algo, manualSchedule) {
+    manual_executor executor;
+
+    bool done = false;
+    schedule(executor, [&done] -> meta::result<meta::unit, meta::undefined> {
+        done = true;
+        return {};
+    }) | detach();
+
+    ASSERT_FALSE(done);
+    executor.execute_at_most(1);
+    ASSERT_TRUE(done);
 }
 
 } // namespace sl::exec

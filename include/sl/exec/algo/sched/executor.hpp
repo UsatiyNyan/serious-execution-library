@@ -33,7 +33,7 @@ struct [[nodiscard]] executor_signal {
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
         return executor_connection{
             /* .slot = */ slot,
-            /* .executor = */ get_executor(),
+            /* .executor = */ executor_,
         };
     }
 
