@@ -23,6 +23,7 @@ add_library(${PROJECT_NAME} STATIC
     src/algo/event/nowait.cpp
     src/algo/event/atomic.cpp
     src/algo/event/mutex.cpp
+    src/thread/sync/wait_group.cpp
     )
 
 add_library(sl::exec ALIAS ${PROJECT_NAME})
