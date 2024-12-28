@@ -4,7 +4,6 @@ For serious programmers.
 # WIP
 
 Reworking currently, making those futures lazier:
-- [ ] algo::make::contract
 - [ ] algo::seq::on
 - [ ] algo::sched::serial
 - [ ] algo::sync::mutex
