@@ -34,8 +34,8 @@ private:
         void set_value(ElementValueT&& value) & override {
             self_.template set_value_impl<Idx, ElementValueT>(std::move(value));
         }
-        void set_error(ErrorT&& error) & override { self_.template set_error_impl<Idx>(std::move(error)); }
-        void cancel() & override { self_.template cancel_impl<Idx>(); }
+        void set_error(ErrorT&& error) & override { self_.set_error_impl(std::move(error)); }
+        void cancel() & override { self_.cancel_impl(); }
 
     private:
         all_connection& self_;
@@ -79,16 +79,15 @@ private:
         }
 
         auto result = meta::for_each(
-            [](auto& maybe_result) {
+            [](auto&& maybe_result) {
                 DEBUG_ASSERT(maybe_result.has_value());
                 return std::move(maybe_result).value();
             },
-            maybe_results_
+            std::move(maybe_results_)
         );
         slot_.set_value(std::move(result));
     }
 
-    template <std::size_t Idx>
     void set_error_impl(ErrorT&& error) {
         meta::defer cleanup{ [this] {
             const bool is_last = increment_and_check();
@@ -102,7 +101,6 @@ private:
         }
     }
 
-    template <std::size_t Idx>
     void cancel_impl() {
         meta::defer cleanup{ [this] {
             const bool is_last = increment_and_check();
