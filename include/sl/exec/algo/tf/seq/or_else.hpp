@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "sl/exec/algo/seq/transform_connection.hpp"
+#include "sl/exec/algo/tf/detail/transform_connection.hpp"
 
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/model/executor.hpp"
@@ -14,16 +14,16 @@
 namespace sl::exec {
 namespace detail {
 
-template <typename InputValueT, typename ValueT, typename ErrorT, typename F>
-struct [[nodiscard]] and_then_slot : slot<InputValueT, ErrorT> {
-    struct and_then_task : task_node {
-        explicit and_then_task(and_then_slot& self) : self_{ self } {}
+template <typename ValueT, typename InputErrorT, typename ErrorT, typename F>
+struct [[nodiscard]] or_else_slot : slot<ValueT, InputErrorT> {
+    struct or_else_task : task_node {
+        explicit or_else_task(or_else_slot& self) : self_{ self } {}
 
         void execute() noexcept override {
-            if (!ASSUME_VAL(self_.maybe_value_.has_value())) {
+            if (!ASSUME_VAL(self_.maybe_error_.has_value())) {
                 return;
             }
-            auto result = self_.functor_(std::move(self_.maybe_value_).value());
+            auto result = self_.functor_(std::move(self_.maybe_error_).value());
             if (result.has_value()) {
                 self_.slot_.set_value(std::move(result).value());
             } else {
@@ -33,31 +33,31 @@ struct [[nodiscard]] and_then_slot : slot<InputValueT, ErrorT> {
         void cancel() noexcept override { self_.cancel(); };
 
     private:
-        and_then_slot& self_;
+        or_else_slot& self_;
     };
 
-    and_then_slot(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
+    or_else_slot(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
         : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
 
-    void set_value(InputValueT&& value) & override {
-        maybe_value_.emplace(std::move(value));
+    void set_value(ValueT&& value) & override { slot_.set_value(std::move(value)); }
+    void set_error(InputErrorT&& error) & override {
+        maybe_error_.emplace(std::move(error));
         auto& task = maybe_task_.emplace(*this);
         executor_.schedule(&task);
     }
-    void set_error(ErrorT&& error) & override { slot_.set_error(std::move(error)); }
     void cancel() & override { slot_.cancel(); }
 
 private:
     F functor_;
-    ::tl::optional<InputValueT> maybe_value_{};
-    ::tl::optional<and_then_task> maybe_task_{};
+    ::tl::optional<InputErrorT> maybe_error_{};
+    ::tl::optional<or_else_task> maybe_task_{};
     slot<ValueT, ErrorT>& slot_;
     executor& executor_;
 };
 
-template <Signal SignalT, typename F, typename ResultT = std::invoke_result_t<F, typename SignalT::value_type>>
-    requires std::same_as<typename SignalT::error_type, typename ResultT::error_type>
-struct [[nodiscard]] and_then_signal {
+template <Signal SignalT, typename F, typename ResultT = std::invoke_result_t<F, typename SignalT::error_type>>
+    requires std::same_as<typename SignalT::value_type, typename ResultT::value_type>
+struct [[nodiscard]] or_else_signal {
     using value_type = typename ResultT::value_type;
     using error_type = typename ResultT::error_type;
 
@@ -68,7 +68,7 @@ struct [[nodiscard]] and_then_signal {
         return transform_connection{
             /* .signal = */ std::move(signal),
             /* .slot = */
-            and_then_slot<typename SignalT::value_type, value_type, error_type, F>{
+            or_else_slot<value_type, typename SignalT::error_type, error_type, F>{
                 /* .functor = */ std::move(functor),
                 /* .slot = */ slot,
                 /* .executor = */ get_executor(),
@@ -80,12 +80,12 @@ struct [[nodiscard]] and_then_signal {
 };
 
 template <typename F>
-struct [[nodiscard]] and_then {
+struct [[nodiscard]] or_else {
     F functor;
 
     template <Signal SignalT>
     constexpr auto operator()(SignalT&& signal) && {
-        return and_then_signal<SignalT, F>{
+        return or_else_signal<SignalT, F>{
             .signal = std::move(signal),
             .functor = std::move(functor),
         };
@@ -95,9 +95,9 @@ struct [[nodiscard]] and_then {
 } // namespace detail
 
 template <typename FV>
-constexpr auto and_then(FV&& functor) {
+constexpr auto or_else(FV&& functor) {
     using F = std::decay_t<FV>;
-    return detail::and_then<F>{ .functor = std::forward<FV>(functor) };
+    return detail::or_else<F>{ .functor = std::forward<FV>(functor) };
 }
 
 } // namespace sl::exec

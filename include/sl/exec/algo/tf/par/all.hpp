@@ -6,7 +6,7 @@
 #pragma once
 
 #include "sl/exec/algo/sched/inline.hpp"
-#include "sl/exec/algo/seq/transform_connection.hpp"
+#include "sl/exec/algo/tf/detail/transform_connection.hpp"
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
 
