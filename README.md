@@ -5,10 +5,10 @@ For serious programmers.
 
 Reworking currently, making those futures lazier:
 - [ ] algo::make::contract
-- [ ] algo::seq::force
 - [ ] algo::seq::on
 - [ ] algo::sched::serial
 - [ ] algo::sync::mutex
 - [ ] coro
 - [ ] await
+- [ ] presentation :3
 - [ ] thread::pool::distributed
