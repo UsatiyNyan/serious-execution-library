@@ -1,11 +1,14 @@
 # serious-execution-library
 For serious programmers.
 
-# st
+# WIP
 
-Stands for single-threaded. An experiment in creating a single-threaded versions of following concepts in C++:
-- `future`
-- `coroutine`
-- `event-queue`/`epoll` - moved to serious-io-library
-
-example moved to serious-io-library
+Reworking currently, making those futures lazier:
+- [ ] algo::make::contract
+- [ ] algo::seq::force
+- [ ] algo::seq::on
+- [ ] algo::sched::serial
+- [ ] algo::sync::mutex
+- [ ] coro
+- [ ] await
+- [ ] thread::pool::distributed
