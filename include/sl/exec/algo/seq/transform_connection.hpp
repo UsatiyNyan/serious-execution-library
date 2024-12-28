@@ -13,7 +13,7 @@ struct [[nodiscard]] transform_connection {
     transform_connection(SignalT signal, SlotT slot)
         : slot_{ std::move(slot) }, connection_{ std::move(signal).subscribe(slot_) } {}
 
-    void emit() { connection_.emit(); }
+    void emit() & { connection_.emit(); }
 
 private:
     SlotT slot_;
