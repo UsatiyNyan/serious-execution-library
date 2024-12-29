@@ -11,6 +11,7 @@
 
 #include <sl/meta/lifetime/defer.hpp>
 #include <sl/meta/lifetime/immovable.hpp>
+#include <sl/meta/lifetime/lazy_eval.hpp>
 #include <sl/meta/tuple/for_each.hpp>
 #include <sl/meta/type/list.hpp>
 
@@ -37,10 +38,12 @@ public:
     any_connection(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
         : connections_{ meta::for_each(
               [this](auto&& signal) {
-                  return transform_connection{
-                      /* .signal = */ std::move(signal),
-                      /* .slot =  */ any_slot{ *this },
-                  };
+                  return meta::lazy_eval{ [this, signal = std::move(signal)]() mutable {
+                      return transform_connection{
+                          /* .signal = */ std::move(signal),
+                          /* .slot =  */ any_slot{ *this },
+                      };
+                  } };
               },
               std::move(signals)
           ) },
@@ -97,7 +100,7 @@ private:
     }
 
 private:
-    std::tuple<transform_connection<SignalTs, slot<ValueT, ErrorT>>...> connections_;
+    std::tuple<transform_connection<SignalTs, any_slot>...> connections_;
     alignas(hardware_destructive_interference_size) std::atomic<std::uint32_t> counter_{ 0 };
     alignas(hardware_destructive_interference_size) std::atomic<bool> done_{ false };
     slot<ValueT, ErrorT>& slot_;
@@ -106,12 +109,16 @@ private:
 template <typename ValueT, typename ErrorT, Signal... SignalTs>
 struct any_connection_box {
     any_connection_box(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
-        : connection_{ std::make_unique<any_connection>(
+        : connection_{ std::make_unique<any_connection<ValueT, ErrorT, SignalTs...>>(
               /* .signals = */ std::move(signals),
               /* .slot = */ slot
           ) } {}
 
-    void emit() & { connection_.release()->emit(); }
+    void emit() & {
+        auto* connection_ptr = connection_.release();
+        DEBUG_ASSERT(connection_ptr != nullptr);
+        connection_ptr->emit();
+    }
 
 private:
     std::unique_ptr<any_connection<ValueT, ErrorT, SignalTs...>> connection_;

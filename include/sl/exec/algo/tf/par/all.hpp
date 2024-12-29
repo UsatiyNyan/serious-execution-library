@@ -12,6 +12,7 @@
 
 #include <sl/meta/lifetime/defer.hpp>
 #include <sl/meta/lifetime/immovable.hpp>
+#include <sl/meta/lifetime/lazy_eval.hpp>
 #include <sl/meta/tuple/for_each.hpp>
 #include <sl/meta/type/list.hpp>
 
@@ -41,6 +42,14 @@ private:
         all_connection& self_;
     };
 
+    template <typename T>
+    struct connections_derive;
+    template <std::size_t... Idxs>
+    struct connections_derive<std::index_sequence<Idxs...>> {
+        using type = std::tuple<transform_connection<SignalTs, all_slot<Idxs>>...>;
+    };
+    using connections_type = typename connections_derive<std::index_sequence_for<SignalTs...>>::type;
+
 public:
     all_connection(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
         : connections_{ make_connections(std::move(signals), std::index_sequence_for<SignalTs...>{}) }, slot_{ slot } {}
@@ -52,10 +61,12 @@ public:
 private:
     template <std::size_t... Idxs>
     auto make_connections(std::tuple<SignalTs...>&& signals, std::index_sequence<Idxs...>) {
-        return std::make_tuple(transform_connection{
-            /* .signal = */ std::get<Idxs>(std::move(signals)),
-            /* .slot =  */ all_slot<Idxs>{ *this },
-        }...);
+        return std::make_tuple(meta::lazy_eval{ [this, signal = std::move(signals)]() mutable {
+            return transform_connection{
+                /* .signal = */ std::get<Idxs>(std::move(signal)),
+                /* .slot =  */ all_slot<Idxs>{ *this },
+            };
+        } }...);
     }
 
     [[nodiscard]] bool increment_and_check() {
@@ -115,7 +126,7 @@ private:
     }
 
 private:
-    std::tuple<transform_connection<SignalTs, slot<typename SignalTs::value_type, ErrorT>>...> connections_;
+    connections_type connections_;
     std::tuple<tl::optional<typename SignalTs::value_type>...> maybe_results_{};
     alignas(hardware_destructive_interference_size) std::atomic<std::uint32_t> counter_{ 0 };
     alignas(hardware_destructive_interference_size) std::atomic<bool> done_{ false };
@@ -125,7 +136,7 @@ private:
 template <typename ValueT, typename ErrorT, Signal... SignalTs>
 struct all_connection_box {
     all_connection_box(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
-        : connection_{ std::make_unique<all_connection>(
+        : connection_{ std::make_unique<all_connection<ValueT, ErrorT, SignalTs...>>(
               /* .signals = */ std::move(signals),
               /* .slot = */ slot
           ) } {}

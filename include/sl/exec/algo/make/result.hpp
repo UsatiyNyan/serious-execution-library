@@ -7,6 +7,8 @@
 #include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/model/concept.hpp"
 
+#include <tl/expected.hpp>
+#include <type_traits>
 #include <utility>
 
 namespace sl::exec {
@@ -45,9 +47,21 @@ struct [[nodiscard]] result_signal {
 
 } // namespace detail
 
-template <typename ValueT, typename ErrorT = meta::undefined>
-constexpr Signal auto as_signal(tl::expected<ValueT, ErrorT> result) {
+template <typename ValueT, typename ErrorT>
+constexpr Signal auto as_signal(meta::result<ValueT, ErrorT> result) {
     return detail::result_signal<ValueT, ErrorT>{ .result = std::move(result) };
+}
+
+template <typename ValueTV>
+constexpr Signal auto value_as_signal(ValueTV&& value) {
+    using ValueT = std::decay_t<ValueTV>;
+    return as_signal(meta::result<ValueT, meta::undefined>{ tl::in_place, std::forward<ValueTV>(value) });
+}
+
+template <typename ErrorTV>
+constexpr Signal auto error_as_signal(ErrorTV&& error) {
+    using ErrorT = std::decay_t<ErrorTV>;
+    return as_signal(meta::result<meta::unit, ErrorT>{ tl::unexpect, std::forward<ErrorTV>(error) });
 }
 
 } // namespace sl::exec

@@ -87,4 +87,21 @@ TEST(algo, manualScheduleImmediate) {
     ASSERT_TRUE(done);
 }
 
+TEST(algo, anySimple) {
+    using result_type = meta::result<int, int>;
+    auto s1 = as_signal(result_type{ tl::unexpect, 69 });
+    auto s2 = as_signal(result_type{ 42 });
+    auto s12 = any(std::move(s1), std::move(s2));
+    auto maybe_result = std::move(s12) | get<nowait_event>();
+    ASSERT_EQ(*maybe_result, 42);
+}
+
+TEST(algo, andSimple) {
+    auto s1 = value_as_signal(42);
+    auto s2 = value_as_signal(69);
+    auto s12 = all(std::move(s1), std::move(s2));
+    auto maybe_result = std::move(s12) | get<nowait_event>();
+    ASSERT_EQ(*maybe_result, std::make_tuple(42, 69));
+}
+
 } // namespace sl::exec

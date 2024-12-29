@@ -2,11 +2,13 @@
 // Created by usatiynyan.
 //
 
+#include "sl/exec/algo.hpp"
 #include "sl/exec/coro.hpp"
 
 #include "sl/exec/algo/sched/manual.hpp"
 
 #include <gtest/gtest.h>
+#include <sl/meta/func/undefined.hpp>
 
 namespace sl::exec {
 
@@ -228,6 +230,51 @@ TEST(coro, asyncNesting) {
 
     EXPECT_EQ(executor.execute_batch(), 1);
     ASSERT_EQ(result, expected);
+}
+
+TEST(coro, awaitSignal) {
+    manual_executor executor;
+    std::size_t counter = 0;
+
+    auto coro = [&counter] -> async<void> {
+        auto result = co_await as_signal(meta::result<std::size_t, meta::undefined>{ 42 });
+        counter += result.value();
+    };
+    coro_schedule(executor, coro());
+    ASSERT_EQ(counter, 0);
+
+    EXPECT_EQ(executor.execute_batch(), 1);
+    ASSERT_EQ(counter, 42);
+}
+
+TEST(coro, awaitExecutor) {
+    manual_executor coro_executor;
+    manual_executor signal_executor;
+
+    int coro_counter = 0;
+    int signal_counter = 0;
+
+    auto coro = [&] -> async<void> {
+        ++coro_counter;
+        co_await schedule(signal_executor, [&] {
+            ++signal_counter;
+            return meta::result<meta::unit, meta::undefined>{};
+        });
+        ++coro_counter;
+    };
+    coro_schedule(coro_executor, coro());
+
+    EXPECT_EQ(coro_executor.execute_batch(), 1);
+    ASSERT_EQ(coro_counter, 1);
+    ASSERT_EQ(signal_counter, 0);
+
+    EXPECT_EQ(coro_executor.execute_batch(), 0);
+    ASSERT_EQ(coro_counter, 1);
+    ASSERT_EQ(signal_counter, 0);
+
+    EXPECT_EQ(signal_executor.execute_batch(), 1);
+    ASSERT_EQ(coro_counter, 2);
+    ASSERT_EQ(signal_counter, 1);
 }
 
 } // namespace sl::exec
