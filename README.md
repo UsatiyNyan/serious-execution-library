@@ -4,7 +4,6 @@ For serious programmers.
 # WIP
 
 Reworking currently, making those futures lazier:
-- [ ] coro
-- [ ] await
 - [ ] presentation :3
+- [ ] TESTS
 - [ ] thread::pool::distributed
