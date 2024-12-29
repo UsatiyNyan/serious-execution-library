@@ -21,6 +21,7 @@ project(
 add_library(${PROJECT_NAME} STATIC
     src/algo/sched/manual.cpp
     src/algo/sync/serial.cpp
+    src/coro/async.cpp
     src/thread/event/nowait.cpp
     src/thread/event/atomic.cpp
     src/thread/event/mutex.cpp
