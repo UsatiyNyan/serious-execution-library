@@ -55,12 +55,11 @@ TEST(algo, orElse) {
     ASSERT_EQ(*maybe_result, meta::err(std::string{ "43" }));
 }
 
-TEST(algo, manualAsScheduler) {
-    // looks dumb, might need to stick to schedule(...) API
+TEST(algo, manualSchedule) {
     manual_executor executor;
 
     bool done = false;
-    as_scheduler(executor).schedule() //
+    schedule(executor) //
         | map([&done](meta::unit) {
               done = true;
               return meta::unit{};
@@ -74,13 +73,13 @@ TEST(algo, manualAsScheduler) {
     ASSERT_TRUE(done);
 }
 
-TEST(algo, manualSchedule) {
+TEST(algo, manualScheduleImmediate) {
     manual_executor executor;
 
     bool done = false;
-    schedule(executor, [&done] -> meta::result<meta::unit, meta::undefined> {
+    schedule(executor, [&done] {
         done = true;
-        return {};
+        return meta::result<meta::unit, meta::undefined>{};
     }) | detach();
 
     ASSERT_FALSE(done);

@@ -63,4 +63,8 @@ constexpr Signal auto schedule(executor& executor, FV&& functor) {
     };
 }
 
+constexpr Signal auto schedule(executor& executor) {
+    return schedule(executor, [] { return meta::result<meta::unit, meta::undefined>{}; });
+}
+
 } // namespace sl::exec

@@ -39,11 +39,6 @@ concept Signal = requires(
     { std::move(r_signal).subscribe(i_slot) } -> Connection;
 };
 
-template <typename SchedulerT>
-concept Scheduler = requires(SchedulerT& scheduler) {
-    { scheduler.schedule() } -> Signal;
-};
-
 template <typename EventT>
 concept Event = requires(EventT& event) {
     event.set();

@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "sl/exec/algo/sched/executor.hpp"
+#include "sl/exec/model/executor.hpp"
 
 namespace sl::exec {
 

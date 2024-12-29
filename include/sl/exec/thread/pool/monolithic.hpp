@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "sl/exec/algo/sched/executor.hpp"
+#include "sl/exec/model/executor.hpp"
 
 #include "sl/exec/thread/detail/unbound_blocking_queue.hpp"
 #include "sl/exec/thread/pool/config.hpp"
