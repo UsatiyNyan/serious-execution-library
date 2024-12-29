@@ -4,14 +4,15 @@
 
 #pragma once
 
-#include <coroutine>
-#include <exception>
-#include <iterator>
 #include <libassert/assert.hpp>
 #include <tl/expected.hpp>
 #include <tl/optional.hpp>
 
-namespace sl::coro {
+#include <coroutine>
+#include <exception>
+#include <iterator>
+
+namespace sl::exec {
 
 template <typename T>
 class generator {
@@ -146,4 +147,4 @@ generator<std::pair<std::size_t, T>> enumerate(generator<T> a_generator) {
     }
 };
 
-} // namespace sl::coro
+} // namespace sl::exec
