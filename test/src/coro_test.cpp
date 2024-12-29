@@ -87,92 +87,92 @@ TEST(coro, nestingGenerator) {
 }
 
 
-// TEST(coro, task) {
-//     constexpr auto calculate_meaning_of_life = [] -> task<int> { co_return 42; };
-//     task<int> meaning_of_life = calculate_meaning_of_life();
-//     std::cout << "calculating meaning of life brrr..." << std::endl;
-//     meaning_of_life.start();
-//     std::cout << "meaning of life calculated" << std::endl;
-//     const int meaning_of_life_result = std::move(meaning_of_life).result_or_throw();
-//     std::cout << "result: " << meaning_of_life_result << std::endl;
-//     ASSERT_EQ(meaning_of_life_result, 42);
-// }
-//
-// task<std::vector<std::string>> live_productive_day() {
-//     std::vector<std::string> done;
-//     std::cout << "ready for productive day!" << std::endl;
-//
-//     constexpr auto shower = [] -> task<std::string> {
-//         std::cout << "taking a shower" << std::endl;
-//         co_return "shower";
-//     };
-//     done.push_back(co_await shower());
-//
-//     constexpr auto coffee = [] -> task<std::string> {
-//         std::cout << "making some coffee" << std::endl;
-//         co_return "coffee";
-//     };
-//     done.push_back(co_await coffee());
-//
-//     constexpr auto work = [] -> task<std::vector<std::string>> {
-//         std::cout << "doing work" << std::endl;
-//         std::vector<std::string> work_done;
-//
-//         constexpr auto jira = [] -> task<std::string> { co_return "jira"; };
-//         work_done.push_back(co_await jira());
-//
-//         constexpr auto coding = [] -> task<std::string> { co_return "coding"; };
-//         work_done.push_back(co_await coding());
-//
-//         constexpr auto git = [] -> task<std::string> { co_return "git"; };
-//         work_done.push_back(co_await git());
-//
-//         co_return work_done;
-//     };
-//     auto work_result = co_await work();
-//     done.insert(done.end(), work_result.begin(), work_result.end());
-//
-//     constexpr auto eat = [] -> task<std::string> {
-//         std::cout << "eating, yummy" << std::endl;
-//         co_return "eat";
-//     };
-//     done.push_back(co_await eat());
-//
-//     std::cout << "day ended, time to sleep Z-z-z..." << std::endl;
-//     co_return done;
-// }
-//
-// TEST(coro, nestingTask) {
-//     auto productive_day = live_productive_day();
-//     productive_day.start();
-//     const auto productive_day_result = std::move(productive_day).result_or_throw();
-//     ASSERT_EQ(
-//         productive_day_result,
-//         (std::vector<std::string>{
-//             "shower",
-//             "coffee",
-//             "jira",
-//             "coding",
-//             "git",
-//             "eat",
-//         })
-//     );
-// }
-//
-// TEST(coro, tasksCallStack) {
-//     constexpr int iterations = 10'000'000;
-//     constexpr auto synchronous = [] -> task<int> { co_return 1; };
-//     constexpr auto iter_synchronous = [synchronous] -> task<int> {
-//         int sum = 0;
-//         for (int i = 0; i < iterations; ++i) {
-//             sum += co_await synchronous();
-//         }
-//         co_return sum;
-//     };
-//     auto iter_synchronous_task = iter_synchronous();
-//     iter_synchronous_task.start();
-//     const int result = std::move(iter_synchronous_task).result_or_throw();
-//     ASSERT_EQ(result, iterations);
-// }
+TEST(coro, coroutine) {
+    constexpr auto calculate_meaning_of_life = [] -> coroutine<int> { co_return 42; };
+    coroutine<int> meaning_of_life = calculate_meaning_of_life();
+    std::cout << "calculating meaning of life brrr..." << std::endl;
+    meaning_of_life.start();
+    std::cout << "meaning of life calculated" << std::endl;
+    const int meaning_of_life_result = std::move(meaning_of_life).result_or_throw();
+    std::cout << "result: " << meaning_of_life_result << std::endl;
+    ASSERT_EQ(meaning_of_life_result, 42);
+}
+
+coroutine<std::vector<std::string>> live_productive_day() {
+    std::vector<std::string> done;
+    std::cout << "ready for productive day!" << std::endl;
+
+    constexpr auto shower = [] -> coroutine<std::string> {
+        std::cout << "taking a shower" << std::endl;
+        co_return "shower";
+    };
+    done.push_back(co_await shower());
+
+    constexpr auto coffee = [] -> coroutine<std::string> {
+        std::cout << "making some coffee" << std::endl;
+        co_return "coffee";
+    };
+    done.push_back(co_await coffee());
+
+    constexpr auto work = [] -> coroutine<std::vector<std::string>> {
+        std::cout << "doing work" << std::endl;
+        std::vector<std::string> work_done;
+
+        constexpr auto jira = [] -> coroutine<std::string> { co_return "jira"; };
+        work_done.push_back(co_await jira());
+
+        constexpr auto coding = [] -> coroutine<std::string> { co_return "coding"; };
+        work_done.push_back(co_await coding());
+
+        constexpr auto git = [] -> coroutine<std::string> { co_return "git"; };
+        work_done.push_back(co_await git());
+
+        co_return work_done;
+    };
+    auto work_result = co_await work();
+    done.insert(done.end(), work_result.begin(), work_result.end());
+
+    constexpr auto eat = [] -> coroutine<std::string> {
+        std::cout << "eating, yummy" << std::endl;
+        co_return "eat";
+    };
+    done.push_back(co_await eat());
+
+    std::cout << "day ended, time to sleep Z-z-z..." << std::endl;
+    co_return done;
+}
+
+TEST(coro, nestingTask) {
+    auto productive_day = live_productive_day();
+    productive_day.start();
+    const auto productive_day_result = std::move(productive_day).result_or_throw();
+    ASSERT_EQ(
+        productive_day_result,
+        (std::vector<std::string>{
+            "shower",
+            "coffee",
+            "jira",
+            "coding",
+            "git",
+            "eat",
+        })
+    );
+}
+
+TEST(coro, coroutinesCallStack) {
+    constexpr int iterations = 10'000'000;
+    constexpr auto synchronous = [] -> coroutine<int> { co_return 1; };
+    constexpr auto iter_synchronous = [synchronous] -> coroutine<int> {
+        int sum = 0;
+        for (int i = 0; i < iterations; ++i) {
+            sum += co_await synchronous();
+        }
+        co_return sum;
+    };
+    auto iter_synchronous_coroutine = iter_synchronous();
+    iter_synchronous_coroutine.start();
+    const int result = std::move(iter_synchronous_coroutine).result_or_throw();
+    ASSERT_EQ(result, iterations);
+}
 
 } // namespace sl::exec

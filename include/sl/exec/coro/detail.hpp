@@ -4,12 +4,13 @@
 
 #pragma once
 
-#include <exception>
 #include <libassert/assert.hpp>
 #include <tl/expected.hpp>
 #include <tl/optional.hpp>
 
-namespace sl::coro::detail {
+#include <exception>
+
+namespace sl::exec::detail {
 
 template <typename T>
 class promise_result_mixin_base {
@@ -70,4 +71,4 @@ public:
     }
 };
 
-} // namespace sl::coro::detail
+} // namespace sl::exec::detail

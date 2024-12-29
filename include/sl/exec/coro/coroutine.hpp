@@ -4,15 +4,15 @@
 
 #pragma once
 
-#include "sl/coro/detail.hpp"
+#include "sl/exec/coro/detail.hpp"
 
 #include <coroutine>
 #include <libassert/assert.hpp>
 
-namespace sl::coro {
+namespace sl::exec {
 
 template <typename T>
-class task {
+class coroutine {
 public:
     // vvv compiler hooks
     struct promise_type;
@@ -24,19 +24,19 @@ public:
     // ^^^ compiler hooks
 
 private:
-    explicit task(handle_type handle) : handle_{ handle } {}
+    explicit coroutine(handle_type handle) : handle_{ handle } {}
 
 public:
-    ~task() {
+    ~coroutine() {
         if (handle_) {
             handle_.destroy();
         }
     }
 
-    task(const task&) = delete;
-    task& operator=(const task&) = delete;
-    task(task&& other) noexcept : handle_{ std::exchange(other.handle_, {}) } {}
-    task& operator=(task&& other) noexcept { std::swap(handle_, other.handle_); }
+    coroutine(const coroutine&) = delete;
+    coroutine& operator=(const coroutine&) = delete;
+    coroutine(coroutine&& other) noexcept : handle_{ std::exchange(other.handle_, {}) } {}
+    coroutine& operator=(coroutine&& other) noexcept { std::swap(handle_, other.handle_); }
 
     void start() { handle_.resume(); }
 
@@ -54,9 +54,9 @@ private:
 };
 
 template <typename T>
-struct task<T>::promise_type : public detail::promise_result_mixin<T> {
+struct coroutine<T>::promise_type : public detail::promise_result_mixin<T> {
     // vvv compiler hooks
-    auto get_return_object() { return task{ handle_type::from_promise(*this) }; };
+    auto get_return_object() { return coroutine{ handle_type::from_promise(*this) }; };
     auto initial_suspend() { return std::suspend_always{}; }
     auto final_suspend() noexcept { return final_awaiter{}; }
     // ^^^ compiler hooks
@@ -66,7 +66,7 @@ public:
 };
 
 template <typename T>
-struct task<T>::final_awaiter {
+struct coroutine<T>::final_awaiter {
     // vvv compiler hooks
     bool await_ready() noexcept { return false; }
     std::coroutine_handle<> await_suspend(handle_type handle) noexcept {
@@ -80,7 +80,7 @@ struct task<T>::final_awaiter {
 };
 
 template <typename T>
-class task<T>::awaiter {
+class coroutine<T>::awaiter {
 public:
     explicit awaiter(handle_type handle) : handle_{ handle } {}
 
@@ -101,4 +101,4 @@ private:
     handle_type handle_;
 };
 
-} // namespace sl::coro
+} // namespace sl::exec::coro
