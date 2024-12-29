@@ -4,7 +4,6 @@ For serious programmers.
 # WIP
 
 Reworking currently, making those futures lazier:
-- [ ] algo::sched::serial
 - [ ] algo::sync::mutex
 - [ ] coro
 - [ ] await
