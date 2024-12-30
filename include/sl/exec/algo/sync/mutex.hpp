@@ -23,7 +23,7 @@ struct [[nodiscard]] mutex_lock {
 struct [[nodiscard]] mutex {
     explicit mutex(executor& executor) : serial_executor_{ executor } {}
 
-    Signal auto lock() { return as_signal(meta::result<mutex_lock, meta::undefined>{}) | on(serial_executor_); }
+    Signal auto lock() { return value_as_signal(mutex_lock{}) | on(serial_executor_); }
 
 private:
     serial_executor serial_executor_;

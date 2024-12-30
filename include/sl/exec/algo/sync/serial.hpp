@@ -14,15 +14,24 @@
 namespace sl::exec {
 
 struct serial_executor : executor {
-    explicit serial_executor(executor& executor) : executor_{ executor } {}
+    explicit serial_executor(executor& executor) : task_{ *this }, executor_{ executor } {}
 
     void schedule(task_node* task_node) noexcept override;
     void stop() noexcept override;
 
 private:
-    void schedule_batch_processing();
+    struct serial_executor_task : task_node {
+        explicit serial_executor_task(serial_executor& self) : self_{ self } {}
+
+        void execute() noexcept override;
+        void cancel() noexcept override { self_.stop(); }
+
+    private:
+        serial_executor& self_;
+    };
 
 private:
+    serial_executor_task task_;
     alignas(detail::hardware_destructive_interference_size) detail::lock_free_stack<task_node> batch_;
     alignas(detail::hardware_destructive_interference_size) std::atomic<std::uint32_t> work_{ 0 };
     executor& executor_;
