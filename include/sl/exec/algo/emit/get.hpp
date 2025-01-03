@@ -16,15 +16,18 @@ struct get_slot final : slot<ValueT, ErrorT> {
     using result_type = meta::result<ValueT, ErrorT>;
 
     void set_value(ValueT&& value) & override {
-        maybe_result.emplace(result_type{ meta::ok(std::move(value)) });
+        maybe_result.emplace(tl::in_place, std::move(value));
         event.set();
     }
     void set_error(ErrorT&& error) & override {
-        maybe_result.emplace(result_type{ meta::err(std::move(error)) });
+        maybe_result.emplace(tl::unexpect, std::move(error));
         event.set();
     }
 
-    void cancel() & override { ASSUME(!maybe_result.has_value()); }
+    void cancel() & override {
+        ASSUME(!maybe_result.has_value());
+        event.set();
+    }
 
     tl::optional<result_type> maybe_result{};
     EventT event{};
