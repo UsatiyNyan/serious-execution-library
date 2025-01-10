@@ -7,20 +7,21 @@
 #include "sl/exec/coro/detail.hpp"
 #include "sl/exec/model/executor.hpp"
 
-#include <coroutine>
+#include <sl/meta/lifetime/immovable.hpp>
+
 #include <libassert/assert.hpp>
-#include <sl/meta/lifetime/unique.hpp>
+
+#include <coroutine>
 
 namespace sl::exec {
 
 template <typename T>
-class async;
+struct [[nodiscard]] async;
 
 template <typename T>
-class async_promise
+struct async_promise
     : public task_node
     , public detail::promise_result_mixin<T> {
-public:
     using handle_type = std::coroutine_handle<async_promise>;
     struct final_awaiter;
 
@@ -61,12 +62,11 @@ struct async_promise<T>::final_awaiter {
 };
 
 template <typename T>
-class async : meta::unique {
-public:
+struct [[nodiscard]] async : meta::immovable {
     // vvv compiler hooks
     using promise_type = async_promise<T>;
     using handle_type = std::coroutine_handle<promise_type>;
-    class awaiter;
+    struct awaiter;
 
     auto operator co_await() && noexcept { return awaiter{ handle_ }; }
     // ^^^ compiler hooks
@@ -80,8 +80,6 @@ public:
     }
 
     async(async&& other) noexcept : handle_{ std::exchange(other.handle_, {}) } {}
-    async& operator=(async&& other) noexcept { std::swap(handle_, other.handle_); }
-
     [[nodiscard]] auto release() && noexcept { return std::exchange(handle_, {}); }
 
 private:
@@ -89,8 +87,7 @@ private:
 };
 
 template <typename T>
-class async<T>::awaiter {
-public:
+struct async<T>::awaiter {
     explicit awaiter(handle_type handle) : handle_{ handle } {}
 
     // vvv compiler hooks

@@ -4,9 +4,11 @@
 
 #pragma once
 
+#include <sl/meta/lifetime/immovable.hpp>
+#include <sl/meta/monad/maybe.hpp>
+#include <sl/meta/monad/result.hpp>
+
 #include <libassert/assert.hpp>
-#include <tl/expected.hpp>
-#include <tl/optional.hpp>
 
 #include <coroutine>
 #include <exception>
@@ -15,14 +17,13 @@
 namespace sl::exec {
 
 template <typename T>
-class generator {
-public:
+struct [[nodiscard]] generator : meta::immovable {
     // vvv compiler hooks
-    class promise_type;
+    struct promise_type;
     using handle_type = std::coroutine_handle<promise_type>;
     // ^^^ compiler hooks
 
-    class iterator;
+    struct iterator;
 
 private:
     explicit generator(handle_type handle) : handle_{ std::move(handle) } {}
@@ -34,10 +35,7 @@ public:
         }
     }
 
-    generator(const generator&) = delete;
-    generator& operator=(const generator&) = delete;
     generator(generator&& other) noexcept : handle_{ std::exchange(other.handle_, {}) } {}
-    generator& operator=(generator&& other) noexcept { std::swap(handle_, other.handle_); }
 
     [[nodiscard]] auto next() {
         handle_.promise().resume_impl(handle_);
@@ -57,9 +55,8 @@ private:
 };
 
 template <typename T>
-class generator<T>::promise_type {
-public:
-    using yield_type = tl::expected<T, std::exception_ptr>;
+struct generator<T>::promise_type {
+    using yield_type = meta::result<T, std::exception_ptr>;
 
     // vvv compiler hooks
     auto get_return_object() { return generator{ handle_type::from_promise(*this) }; };
@@ -67,7 +64,7 @@ public:
     auto initial_suspend() { return std::suspend_always{}; }
     auto final_suspend() noexcept { return std::suspend_always{}; }
 
-    void unhandled_exception() { maybe_yield_.emplace(tl::make_unexpected(std::current_exception())); }
+    void unhandled_exception() { maybe_yield_.emplace(tl::unexpect, std::current_exception()); }
 
     template <std::convertible_to<T> From>
     auto yield_value(From&& from) {
@@ -83,12 +80,12 @@ public:
         ASSUME(maybe_yield_.has_value() || handle.done());
     }
 
-    [[nodiscard]] tl::optional<yield_type> get_yield() && noexcept {
-        tl::optional<yield_type> extracted;
+    [[nodiscard]] meta::maybe<yield_type> get_yield() && noexcept {
+        meta::maybe<yield_type> extracted;
         maybe_yield_.swap(extracted);
         return std::move(extracted);
     }
-    [[nodiscard]] tl::optional<T> get_yield_or_throw() && {
+    [[nodiscard]] meta::maybe<T> get_yield_or_throw() && {
         return std::move(*this).get_yield().map([](yield_type yield_value) {
             if (!yield_value.has_value()) [[unlikely]] {
                 std::rethrow_exception(yield_value.error());
@@ -98,12 +95,11 @@ public:
     }
 
 private:
-    tl::optional<yield_type> maybe_yield_;
+    meta::maybe<yield_type> maybe_yield_;
 };
 
 template <typename T>
-class generator<T>::iterator {
-public:
+struct generator<T>::iterator {
     explicit iterator(generator<T>& self) : self_{ &self } { advance(); }
 
     iterator& operator++() {
@@ -134,8 +130,8 @@ private:
     }
 
 private:
+    meta::maybe<T> maybe_value_{};
     generator<T>* self_;
-    tl::optional<T> maybe_value_;
 };
 
 template <typename T>

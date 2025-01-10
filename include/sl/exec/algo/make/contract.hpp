@@ -17,7 +17,7 @@ namespace sl::exec {
 namespace detail {
 
 struct [[nodiscard]] promise_connection {
-    void emit() & {}
+    void emit() & noexcept {}
 };
 
 template <typename ValueT, typename ErrorT>

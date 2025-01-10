@@ -12,13 +12,12 @@
 namespace sl::exec {
 
 template <typename T>
-class coroutine {
-public:
+struct coroutine {
     // vvv compiler hooks
     struct promise_type;
     using handle_type = std::coroutine_handle<promise_type>;
     struct final_awaiter;
-    class awaiter;
+    struct awaiter;
 
     auto operator co_await() && noexcept { return awaiter{ handle_ }; }
     // ^^^ compiler hooks
@@ -80,8 +79,7 @@ struct coroutine<T>::final_awaiter {
 };
 
 template <typename T>
-class coroutine<T>::awaiter {
-public:
+struct coroutine<T>::awaiter {
     explicit awaiter(handle_type handle) : handle_{ handle } {}
 
     // vvv compiler hooks
