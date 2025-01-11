@@ -4,18 +4,15 @@
 
 #pragma once
 
-#include <sl/meta/lifetime/immovable.hpp>
-#include <sl/meta/monad/maybe.hpp>
-#include <sl/meta/monad/result.hpp>
+#include "sl/exec/coro/detail.hpp"
 
-#include <libassert/assert.hpp>
+#include <sl/meta/lifetime/immovable.hpp>
 
 #include <coroutine>
-#include <exception>
 
 namespace sl::exec {
 
-template <typename T>
+template <typename YieldT, typename ReturnT = void>
 struct [[nodiscard]] async_gen : meta::immovable {
     // vvv compiler hooks
     struct promise_type;
@@ -38,6 +35,15 @@ public:
 
     async_gen(async_gen&& other) noexcept : handle_{ std::exchange(other.handle_, {}) } {}
 
+    [[nodiscard]] auto result() && {
+        ASSERT(handle_.done());
+        return std::move(handle_.promise()).get_return();
+    }
+    [[nodiscard]] auto result_or_throw() && {
+        ASSERT(handle_.done());
+        return std::move(handle_.promise()).get_return_or_throw();
+    }
+
     // vvv compiler hooks
     auto operator co_await() & noexcept { return next_awaiter{ handle_ }; }
     // ^^^ compiler hooks
@@ -46,13 +52,10 @@ private:
     handle_type handle_;
 };
 
-template <typename T>
-struct async_gen<T>::promise_type {
-    using yield_type = meta::result<T, std::exception_ptr>;
-
-public:
+template <typename YieldT, typename ReturnT>
+struct async_gen<YieldT, ReturnT>::promise_type : detail::promise_result_mixin<ReturnT> {
     // vvv compiler hooks
-    auto get_return_object() { return async_gen<T>{ handle_type::from_promise(*this) }; };
+    auto get_return_object() { return async_gen{ handle_type::from_promise(*this) }; };
 
     auto initial_suspend() { return std::suspend_always{}; }
     auto final_suspend() noexcept {
@@ -60,39 +63,32 @@ public:
         return yield_awaiter{ consumer };
     }
 
-    void unhandled_exception() { maybe_yield_.emplace(tl::unexpect, std::current_exception()); }
-
-    template <std::convertible_to<T> From>
+    template <std::convertible_to<YieldT> From>
     auto yield_value(From&& from) {
-        maybe_yield_.emplace(tl::in_place, std::forward<From>(from));
+        maybe_yield_.emplace(std::forward<From>(from));
         return yield_awaiter{ consumer };
     }
-    void return_void() {}
     // ^^^ compiler hooks
 
-    [[nodiscard]] meta::maybe<yield_type> get_yield() & noexcept {
-        meta::maybe<yield_type> extracted{ std::move(maybe_yield_) };
+    [[nodiscard]] meta::maybe<YieldT> get_yield() & noexcept {
+        meta::maybe<YieldT> extracted{ std::move(maybe_yield_) };
         maybe_yield_.reset();
         return extracted;
     }
-    [[nodiscard]] meta::maybe<T> get_yield_or_throw() & {
-        return get_yield().map([](yield_type yield_value) {
-            if (!yield_value.has_value()) [[unlikely]] {
-                std::rethrow_exception(yield_value.error());
-            }
-            return std::move(yield_value).value();
-        });
+    [[nodiscard]] meta::maybe<YieldT> get_yield_or_throw() & {
+        detail::promise_result_mixin<ReturnT>::try_rethrow();
+        return get_yield();
     }
 
 private:
-    meta::maybe<yield_type> maybe_yield_;
+    meta::maybe<YieldT> maybe_yield_;
 
 public:
     std::coroutine_handle<> consumer;
 };
 
-template <typename T>
-struct async_gen<T>::yield_awaiter {
+template <typename YieldT, typename ReturnT>
+struct async_gen<YieldT, ReturnT>::yield_awaiter {
     explicit yield_awaiter(std::coroutine_handle<> consumer) : consumer_{ consumer } {}
 
     // vvv compiler hooks
@@ -105,8 +101,8 @@ private:
     std::coroutine_handle<> consumer_;
 };
 
-template <typename T>
-struct async_gen<T>::next_awaiter {
+template <typename YieldT, typename ReturnT>
+struct async_gen<YieldT, ReturnT>::next_awaiter {
     explicit next_awaiter(handle_type producer) : producer_{ producer }, producer_promise_{ producer_.promise() } {}
 
     // vvv compiler hooks
@@ -115,7 +111,7 @@ struct async_gen<T>::next_awaiter {
         producer_promise_.consumer = consumer;
         return producer_;
     }
-    [[nodiscard]] meta::maybe<T> await_resume() { return producer_promise_.get_yield_or_throw(); }
+    [[nodiscard]] meta::maybe<YieldT> await_resume() { return producer_promise_.get_yield_or_throw(); }
     // ^^^ compiler hooks
 
 private:

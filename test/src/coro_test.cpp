@@ -249,9 +249,10 @@ TEST(coro, asyncGenOne) {
     std::size_t counter = 0;
 
     constexpr auto inner_coro = [] -> async<std::size_t> { co_return 1u; };
-    constexpr auto gen_coro = [inner_coro] -> async_gen<std::size_t> {
+    constexpr auto gen_coro = [inner_coro] -> async_gen<std::size_t, std::string> {
         const auto value = co_await inner_coro();
         co_yield value;
+        co_return "done";
     };
     auto coro = [&counter, gen_coro] -> async<void> {
         auto g = gen_coro();
@@ -261,6 +262,8 @@ TEST(coro, asyncGenOne) {
 
         auto nothing = co_await g;
         ASSERT(!nothing.has_value());
+
+        ASSERT(std::move(g).result() == "done");
         co_return;
     };
     coro_schedule(executor, coro());
