@@ -4,19 +4,16 @@
 
 #pragma once
 
-#include <sl/meta/lifetime/immovable.hpp>
-#include <sl/meta/monad/maybe.hpp>
-#include <sl/meta/monad/result.hpp>
+#include "sl/exec/coro/detail.hpp"
 
-#include <libassert/assert.hpp>
+#include <sl/meta/lifetime/immovable.hpp>
 
 #include <coroutine>
-#include <exception>
 #include <iterator>
 
 namespace sl::exec {
 
-template <typename T>
+template <typename YieldT, typename ReturnT = void>
 struct [[nodiscard]] generator : meta::immovable {
     // vvv compiler hooks
     struct promise_type;
@@ -41,10 +38,17 @@ public:
         handle_.promise().resume_impl(handle_);
         return handle_.promise().get_yield();
     }
-
     [[nodiscard]] auto next_or_throw() {
         handle_.promise().resume_impl(handle_);
         return handle_.promise().get_yield_or_throw();
+    }
+    [[nodiscard]] auto result() && {
+        ASSERT(handle_.done());
+        return std::move(handle_.promise()).get_return();
+    }
+    [[nodiscard]] auto result_or_throw() && {
+        ASSERT(handle_.done());
+        return std::move(handle_.promise()).get_return_or_throw();
     }
 
     [[nodiscard]] auto begin() { return iterator{ *this }; }
@@ -54,24 +58,19 @@ private:
     handle_type handle_;
 };
 
-template <typename T>
-struct generator<T>::promise_type {
-    using yield_type = meta::result<T, std::exception_ptr>;
-
+template <typename YieldT, typename ReturnT>
+struct generator<YieldT, ReturnT>::promise_type : detail::promise_result_mixin<ReturnT> {
     // vvv compiler hooks
     auto get_return_object() { return generator{ handle_type::from_promise(*this) }; };
 
     auto initial_suspend() { return std::suspend_always{}; }
     auto final_suspend() noexcept { return std::suspend_always{}; }
 
-    void unhandled_exception() { maybe_yield_.emplace(tl::unexpect, std::current_exception()); }
-
-    template <std::convertible_to<T> From>
+    template <std::convertible_to<YieldT> From>
     auto yield_value(From&& from) {
-        maybe_yield_.emplace(tl::in_place, std::forward<From>(from));
+        maybe_yield_.emplace(std::forward<From>(from));
         return std::suspend_always{};
     }
-    void return_void() {}
     // ^^^ compiler hooks
 
     void resume_impl(handle_type handle) {
@@ -80,34 +79,30 @@ struct generator<T>::promise_type {
         DEBUG_ASSERT(maybe_yield_.has_value() || handle.done());
     }
 
-    [[nodiscard]] meta::maybe<yield_type> get_yield() & noexcept {
-        meta::maybe<yield_type> extracted{ std::move(maybe_yield_) };
+    [[nodiscard]] meta::maybe<YieldT> get_yield() & noexcept {
+        meta::maybe<YieldT> extracted{ std::move(maybe_yield_) };
         maybe_yield_.reset();
         return extracted;
     }
-    [[nodiscard]] meta::maybe<T> get_yield_or_throw() & {
-        return get_yield().map([](yield_type yield_value) {
-            if (!yield_value.has_value()) [[unlikely]] {
-                std::rethrow_exception(yield_value.error());
-            }
-            return std::move(yield_value).value();
-        });
+    [[nodiscard]] meta::maybe<YieldT> get_yield_or_throw() & {
+        detail::promise_result_mixin<ReturnT>::try_rethrow();
+        return get_yield();
     }
 
 private:
-    meta::maybe<yield_type> maybe_yield_;
+    meta::maybe<YieldT> maybe_yield_;
 };
 
-template <typename T>
-struct generator<T>::iterator {
-    explicit iterator(generator<T>& self) : self_{ &self } { advance(); }
+template <typename YieldT, typename ReturnT>
+struct generator<YieldT, ReturnT>::iterator {
+    explicit iterator(generator<YieldT, ReturnT>& self) : self_{ &self } { advance(); }
 
     iterator& operator++() {
         advance();
         return *this;
     }
 
-    [[nodiscard]] T& operator*() {
+    [[nodiscard]] YieldT& operator*() {
         ASSERT(maybe_value_.has_value());
         return maybe_value_.value();
     }
@@ -116,7 +111,7 @@ struct generator<T>::iterator {
 
 private:
     void advance() {
-        ASSERT(self_ != nullptr);
+        ASSUME(self_ != nullptr);
         maybe_value_ = self_->next_or_throw();
         if (!maybe_value_.has_value()) {
             self_ = nullptr; // signify end
@@ -124,17 +119,8 @@ private:
     }
 
 private:
-    meta::maybe<T> maybe_value_{};
-    generator<T>* self_;
-};
-
-template <typename T>
-generator<std::pair<std::size_t, T>> enumerate(generator<T> a_generator) {
-    std::size_t index = 0;
-    while (auto maybe_value = a_generator.next_or_throw()) {
-        co_yield std::make_pair(index, std::move(maybe_value).value());
-        ++index;
-    }
+    meta::maybe<YieldT> maybe_value_{};
+    generator<YieldT, ReturnT>* self_;
 };
 
 } // namespace sl::exec

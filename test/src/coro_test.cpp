@@ -12,85 +12,6 @@
 
 namespace sl::exec {
 
-generator<int> create_iota(int i) {
-    while (true) {
-        co_yield i;
-        ++i;
-    }
-};
-
-TEST(coro, generator) {
-    auto iota = create_iota(10);
-    const auto maybe_10 = iota.next_or_throw();
-    ASSERT_TRUE(maybe_10.has_value());
-    EXPECT_EQ(maybe_10.value(), 10);
-    const auto maybe_11 = iota.next_or_throw();
-    ASSERT_TRUE(maybe_11.has_value());
-    EXPECT_EQ(maybe_11.value(), 11);
-    const auto maybe_12 = iota.next_or_throw();
-    ASSERT_TRUE(maybe_12.has_value());
-    EXPECT_EQ(maybe_12.value(), 12);
-    const auto maybe_13 = iota.next_or_throw();
-    ASSERT_TRUE(maybe_13.has_value());
-    EXPECT_EQ(maybe_13.value(), 13);
-    const auto maybe_14 = iota.next_or_throw();
-    ASSERT_TRUE(maybe_14.has_value());
-    EXPECT_EQ(maybe_14.value(), 14);
-}
-
-generator<int> create_iota(int begin, int end) {
-    for (int i = begin; i < end; ++i) {
-        co_yield i;
-    }
-}
-
-TEST(coro, generator_iterator) {
-    const int begin = 1;
-    const int end = 15;
-    int counter = begin;
-    for (const int iota : create_iota(begin, end)) {
-        EXPECT_EQ(counter, iota);
-        ++counter;
-    }
-    EXPECT_EQ(counter, end);
-}
-
-generator<int> create_nesting_iota(int begin, int end, int level = 0) {
-    if (begin >= end) {
-        co_return;
-    }
-
-    const int half = begin + (end - begin) / 2;
-
-    {
-        auto l = create_nesting_iota(begin, half, level + 1);
-        while (auto l_value = l.next_or_throw()) {
-            co_yield std::move(l_value).value();
-        }
-    }
-
-    co_yield half;
-
-    {
-        auto r = create_nesting_iota(half + 1, end, level + 1);
-        while (auto r_value = r.next_or_throw()) {
-            co_yield std::move(r_value).value();
-        }
-    }
-};
-
-TEST(coro, nestingGenerator) {
-    auto nesting_iota = create_nesting_iota(0, 10);
-    for (int i = 0; i < 10; ++i) {
-        const auto maybe_value = nesting_iota.next_or_throw();
-        ASSERT_TRUE(maybe_value.has_value());
-        EXPECT_EQ(maybe_value.value(), i);
-    }
-    // should finish at 10th iter
-    ASSERT_FALSE(nesting_iota.next_or_throw().has_value());
-}
-
-
 TEST(coro, coroutine) {
     constexpr auto calculate_meaning_of_life = [] -> coroutine<int> { co_return 42; };
     coroutine<int> meaning_of_life = calculate_meaning_of_life();
@@ -177,6 +98,97 @@ TEST(coro, coroutinesCallStack) {
     iter_synchronous_coroutine.start();
     const int result = std::move(iter_synchronous_coroutine).result_or_throw();
     ASSERT_EQ(result, iterations);
+}
+
+TEST(coro, generator) {
+    auto create_iota = [](int i) -> generator<int> {
+        while (true) {
+            co_yield i;
+            ++i;
+        }
+    };
+
+    auto iota = create_iota(10);
+    const auto maybe_10 = iota.next_or_throw();
+    ASSERT_TRUE(maybe_10.has_value());
+    EXPECT_EQ(maybe_10.value(), 10);
+    const auto maybe_11 = iota.next_or_throw();
+    ASSERT_TRUE(maybe_11.has_value());
+    EXPECT_EQ(maybe_11.value(), 11);
+    const auto maybe_12 = iota.next_or_throw();
+    ASSERT_TRUE(maybe_12.has_value());
+    EXPECT_EQ(maybe_12.value(), 12);
+    const auto maybe_13 = iota.next_or_throw();
+    ASSERT_TRUE(maybe_13.has_value());
+    EXPECT_EQ(maybe_13.value(), 13);
+    const auto maybe_14 = iota.next_or_throw();
+    ASSERT_TRUE(maybe_14.has_value());
+    EXPECT_EQ(maybe_14.value(), 14);
+}
+
+TEST(coro, generator_iterator) {
+    auto create_iota = [](int begin, int end) -> generator<int> {
+        for (int i = begin; i < end; ++i) {
+            co_yield i;
+        }
+    };
+
+    const int begin = 1;
+    const int end = 15;
+    int counter = begin;
+    for (const int iota : create_iota(begin, end)) {
+        EXPECT_EQ(counter, iota);
+        ++counter;
+    }
+    EXPECT_EQ(counter, end);
+}
+
+generator<int> create_nesting_iota(int begin, int end, int level = 0) {
+    if (begin >= end) {
+        co_return;
+    }
+
+    const int half = begin + (end - begin) / 2;
+
+    {
+        auto l = create_nesting_iota(begin, half, level + 1);
+        while (auto l_value = l.next_or_throw()) {
+            co_yield std::move(l_value).value();
+        }
+    }
+
+    co_yield half;
+
+    {
+        auto r = create_nesting_iota(half + 1, end, level + 1);
+        while (auto r_value = r.next_or_throw()) {
+            co_yield std::move(r_value).value();
+        }
+    }
+};
+
+TEST(coro, nestingGenerator) {
+    auto nesting_iota = create_nesting_iota(0, 10);
+    for (int i = 0; i < 10; ++i) {
+        const auto maybe_value = nesting_iota.next_or_throw();
+        ASSERT_TRUE(maybe_value.has_value());
+        EXPECT_EQ(maybe_value.value(), i);
+    }
+    // should finish at 10th iter
+    ASSERT_FALSE(nesting_iota.next_or_throw().has_value());
+}
+
+TEST(coro, generatorReturn) {
+    auto create_iota = [](int begin, int end) -> generator<int, std::string> {
+        for (int i = begin; i < end; ++i) {
+            co_yield i;
+        }
+        co_return "done";
+    };
+
+    auto iota = create_iota(1, 15);
+    for (const int _ [[maybe_unused]] : iota) {}
+    ASSERT_EQ(std::move(iota).result(), "done");
 }
 
 TEST(coro, asyncOne) {
