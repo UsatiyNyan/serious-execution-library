@@ -39,12 +39,12 @@ public:
 
     [[nodiscard]] auto next() {
         handle_.promise().resume_impl(handle_);
-        return std::move(handle_.promise()).get_yield();
+        return handle_.promise().get_yield();
     }
 
     [[nodiscard]] auto next_or_throw() {
         handle_.promise().resume_impl(handle_);
-        return std::move(handle_.promise()).get_yield_or_throw();
+        return handle_.promise().get_yield_or_throw();
     }
 
     [[nodiscard]] auto begin() { return iterator{ *this }; }
@@ -75,18 +75,18 @@ struct generator<T>::promise_type {
     // ^^^ compiler hooks
 
     void resume_impl(handle_type handle) {
-        ASSUME(!maybe_yield_.has_value());
+        DEBUG_ASSERT(!maybe_yield_.has_value());
         handle.resume();
-        ASSUME(maybe_yield_.has_value() || handle.done());
+        DEBUG_ASSERT(maybe_yield_.has_value() || handle.done());
     }
 
-    [[nodiscard]] meta::maybe<yield_type> get_yield() && noexcept {
+    [[nodiscard]] meta::maybe<yield_type> get_yield() & noexcept {
         meta::maybe<yield_type> extracted;
         maybe_yield_.swap(extracted);
-        return std::move(extracted);
+        return extracted;
     }
-    [[nodiscard]] meta::maybe<T> get_yield_or_throw() && {
-        return std::move(*this).get_yield().map([](yield_type yield_value) {
+    [[nodiscard]] meta::maybe<T> get_yield_or_throw() & {
+        return get_yield().map([](yield_type yield_value) {
             if (!yield_value.has_value()) [[unlikely]] {
                 std::rethrow_exception(yield_value.error());
             }
@@ -105,12 +105,6 @@ struct generator<T>::iterator {
     iterator& operator++() {
         advance();
         return *this;
-    }
-
-    iterator operator++(int) {
-        iterator tmp = *this;
-        advance();
-        return tmp;
     }
 
     [[nodiscard]] T& operator*() {

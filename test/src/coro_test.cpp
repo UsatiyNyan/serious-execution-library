@@ -232,6 +232,89 @@ TEST(coro, asyncNesting) {
     ASSERT_EQ(result, expected);
 }
 
+TEST(coro, asyncGenOne) {
+    manual_executor executor;
+    std::size_t counter = 0;
+
+    constexpr auto inner_coro = [] -> async<std::size_t> { co_return 1u; };
+    constexpr auto gen_coro = [inner_coro] -> async_gen<std::size_t> {
+        const auto value = co_await inner_coro();
+        co_yield value;
+    };
+    auto coro = [&counter, gen_coro] -> async<void> {
+        auto g = gen_coro();
+        auto value = co_await g;
+        ASSERT(value.has_value());
+        counter = value.value();
+
+        auto nothing = co_await g;
+        ASSERT(!nothing.has_value());
+        co_return;
+    };
+    coro_schedule(executor, coro());
+
+    EXPECT_EQ(executor.execute_batch(), 1);
+    ASSERT_EQ(counter, 1);
+}
+
+TEST(coro, asyncGenMany) {
+    manual_executor executor;
+    std::size_t counter = 0;
+    constexpr std::size_t expected = 1000;
+
+    constexpr auto inner_coro = [] -> async<std::size_t> { co_return 1u; };
+    constexpr auto gen_coro = [inner_coro] -> async_gen<std::size_t> {
+        for (std::size_t i = 0; i < expected; ++i) {
+            const std::size_t value = co_await inner_coro();
+            co_yield value;
+        }
+    };
+    auto coro = [&counter, gen_coro] -> async<void> {
+        auto g = gen_coro();
+        while (auto maybe_value = co_await g) {
+            counter += maybe_value.value();
+        }
+        co_return;
+    };
+    coro_schedule(executor, coro());
+
+    EXPECT_EQ(executor.execute_batch(), 1);
+    ASSERT_EQ(counter, expected);
+}
+
+TEST(coro, asyncGenNesting) {
+    manual_executor executor;
+    std::size_t counter = 0;
+    constexpr std::size_t expected = 1000;
+
+    constexpr auto inner_coro = [] -> async<std::size_t> { co_return 1u; };
+    constexpr auto inner_gen_coro = [inner_coro] -> async_gen<std::size_t> {
+        for (std::size_t i = 0; i < expected; ++i) {
+            const std::size_t value = co_await inner_coro();
+            co_yield value;
+        }
+    };
+    constexpr auto gen_coro = [inner_coro, inner_gen_coro] -> async_gen<std::size_t> {
+        auto g = inner_gen_coro();
+        while (auto maybe_value = co_await g) {
+            const std::size_t other_value = co_await inner_coro();
+            co_yield maybe_value.value() + other_value;
+        }
+        co_return;
+    };
+    auto coro = [&counter, gen_coro] -> async<void> {
+        auto g = gen_coro();
+        while (auto maybe_value = co_await g) {
+            counter += maybe_value.value();
+        }
+        co_return;
+    };
+    coro_schedule(executor, coro());
+
+    EXPECT_EQ(executor.execute_batch(), 1);
+    ASSERT_EQ(counter, expected * 2);
+}
+
 TEST(coro, awaitSignal) {
     manual_executor executor;
     std::size_t counter = 0;

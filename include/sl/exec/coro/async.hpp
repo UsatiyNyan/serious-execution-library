@@ -16,14 +16,40 @@
 namespace sl::exec {
 
 template <typename T>
-struct [[nodiscard]] async;
+struct [[nodiscard]] async : meta::immovable {
+    // vvv compiler hooks
+    struct promise_type;
+    // ^^^ compiler hooks
+
+    using handle_type = std::coroutine_handle<promise_type>;
+    struct awaiter;
+    struct final_awaiter;
+
+public:
+    explicit async(handle_type handle) : handle_{ handle } {}
+    ~async() {
+        if (handle_) {
+            DEBUG_ASSERT(handle_.done());
+            handle_.destroy();
+        }
+    }
+
+    async(async&& other) noexcept : handle_{ std::exchange(other.handle_, {}) } {}
+    [[nodiscard]] auto release() && noexcept { return std::exchange(handle_, {}); }
+
+    // vvv compiler hooks
+    auto operator co_await() && noexcept { return awaiter{ handle_ }; }
+    // ^^^ compiler hooks
+
+private:
+    handle_type handle_;
+};
 
 template <typename T>
-struct async_promise
+struct async<T>::promise_type
     : public task_node
     , public detail::promise_result_mixin<T> {
-    using handle_type = std::coroutine_handle<async_promise>;
-    struct final_awaiter;
+    using handle_type = std::coroutine_handle<promise_type>;
 
     // vvv task_node hooks
     void execute() noexcept override {
@@ -44,68 +70,38 @@ struct async_promise
     // ^^^ compiler hooks
 
 public:
-    std::coroutine_handle<> continuation{};
-};
-
-template <typename T>
-struct async_promise<T>::final_awaiter {
-    // vvv compiler hooks
-    bool await_ready() noexcept { return false; }
-    std::coroutine_handle<> await_suspend(handle_type handle) noexcept {
-        if (auto& self = handle.promise(); self.continuation) {
-            return self.continuation;
-        }
-        return std::noop_coroutine();
-    }
-    void await_resume() noexcept {}
-    // ^^^ compiler hooks
-};
-
-template <typename T>
-struct [[nodiscard]] async : meta::immovable {
-    // vvv compiler hooks
-    using promise_type = async_promise<T>;
-    using handle_type = std::coroutine_handle<promise_type>;
-    struct awaiter;
-
-    auto operator co_await() && noexcept { return awaiter{ handle_ }; }
-    // ^^^ compiler hooks
-
-    explicit async(handle_type handle) : handle_{ handle } {}
-    ~async() {
-        if (handle_) {
-            DEBUG_ASSERT(handle_.done());
-            handle_.destroy();
-        }
-    }
-
-    async(async&& other) noexcept : handle_{ std::exchange(other.handle_, {}) } {}
-    [[nodiscard]] auto release() && noexcept { return std::exchange(handle_, {}); }
-
-private:
-    handle_type handle_;
+    std::coroutine_handle<> continuation = std::noop_coroutine();
 };
 
 template <typename T>
 struct async<T>::awaiter {
-    explicit awaiter(handle_type handle) : handle_{ handle } {}
+    explicit awaiter(handle_type handle) : handle_{ handle }, promise_{ handle.promise() } {}
 
     // vvv compiler hooks
     bool await_ready() noexcept { return false; }
-    template <typename U>
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<async_promise<U>> continuation) {
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> continuation) {
         DEBUG_ASSERT(!handle_.done());
-        handle_.promise().continuation = continuation;
+        promise_.continuation = continuation;
         return handle_;
     }
     [[nodiscard]] auto await_resume() {
         DEBUG_ASSERT(handle_.done());
-        return std::move(handle_.promise()).get_return_or_throw();
+        return std::move(promise_).get_return_or_throw();
     }
     // ^^^ compiler hooks
 
 private:
     handle_type handle_;
+    promise_type& promise_;
+};
+
+template <typename T>
+struct async<T>::final_awaiter {
+    // vvv compiler hooks
+    bool await_ready() noexcept { return false; }
+    std::coroutine_handle<> await_suspend(handle_type handle) noexcept { return handle.promise().continuation; }
+    void await_resume() noexcept {}
+    // ^^^ compiler hooks
 };
 
 void coro_schedule(executor& executor, async<void> coro);
