@@ -14,6 +14,28 @@
 #include <coroutine>
 
 namespace sl::exec {
+namespace detail {
+
+template <typename, typename, typename>
+struct async_task_mixin {};
+
+template <typename promise_type, typename handle_type>
+struct async_task_mixin<void, promise_type, handle_type> : task_node {
+    // vvv task_node hooks
+    void execute() noexcept override {
+        auto* promise_ptr = static_cast<promise_type*>(this);
+        handle_type handle = handle_type::from_promise(*promise_ptr);
+        handle.resume();
+    }
+    void cancel() noexcept override {
+        auto* promise_ptr = static_cast<promise_type*>(this);
+        handle_type handle = handle_type::from_promise(*promise_ptr);
+        handle.destroy();
+    }
+    // ^^^ task_node hooks
+};
+
+} // namespace detail
 
 template <typename T>
 struct [[nodiscard]] async : meta::immovable {
@@ -47,21 +69,8 @@ private:
 
 template <typename T>
 struct async<T>::promise_type
-    : public task_node
-    , public detail::promise_result_mixin<T> {
-    using handle_type = std::coroutine_handle<promise_type>;
-
-    // vvv task_node hooks
-    void execute() noexcept override {
-        handle_type handle = handle_type::from_promise(*this);
-        handle.resume();
-    }
-    // TODO(@usatiynyan): make sure this actually works
-    void cancel() noexcept override {
-        handle_type handle = handle_type::from_promise(*this);
-        handle.destroy();
-    }
-    // ^^^ task_node hooks
+    : detail::promise_result_mixin<T>
+    , detail::async_task_mixin<T, promise_type, handle_type> {
 
     // vvv compiler hooks
     auto get_return_object() { return async{ handle_type::from_promise(*this) }; };
