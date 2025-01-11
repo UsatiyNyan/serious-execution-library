@@ -81,8 +81,8 @@ struct generator<T>::promise_type {
     }
 
     [[nodiscard]] meta::maybe<yield_type> get_yield() & noexcept {
-        meta::maybe<yield_type> extracted;
-        maybe_yield_.swap(extracted);
+        meta::maybe<yield_type> extracted{ std::move(maybe_yield_) };
+        maybe_yield_.reset();
         return extracted;
     }
     [[nodiscard]] meta::maybe<T> get_yield_or_throw() & {
