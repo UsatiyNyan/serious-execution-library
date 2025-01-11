@@ -51,9 +51,9 @@ struct promise_result_mixin : public promise_result_mixin_base<T> {
 
     [[nodiscard]] return_type get_return() && noexcept {
         ASSUME(base::maybe_return_.has_value());
-        meta::maybe<return_type> extracted;
-        base::maybe_return_.swap(extracted);
-        return std::move(extracted).value();
+        return_type extracted{ std::move(base::maybe_return_).value() };
+        base::maybe_return_.reset();
+        return extracted;
     }
 
     [[nodiscard]] T get_return_or_throw() && {
@@ -61,11 +61,15 @@ struct promise_result_mixin : public promise_result_mixin_base<T> {
         if (!return_value.has_value()) [[unlikely]] {
             std::rethrow_exception(return_value.error());
         }
-        if constexpr (std::is_void_v<T>) {
-            return;
-        } else {
-            return std::move(return_value).value();
-        }
+        return std::move(return_value).value();
+    }
+
+    void try_rethrow() & {
+        base::maybe_return_.map([](return_type& return_value) {
+            if (!return_value.has_value()) [[unlikely]] {
+                std::rethrow_exception(return_value.error());
+            }
+        });
     }
 };
 

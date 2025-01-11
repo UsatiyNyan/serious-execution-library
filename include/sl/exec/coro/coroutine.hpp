@@ -6,21 +6,21 @@
 
 #include "sl/exec/coro/detail.hpp"
 
+#include <sl/meta/lifetime/immovable.hpp>
+
 #include <coroutine>
-#include <libassert/assert.hpp>
 
 namespace sl::exec {
 
 template <typename T>
-struct coroutine {
+struct coroutine : meta::immovable {
     // vvv compiler hooks
     struct promise_type;
+    // ^^^ compiler hooks
+
     using handle_type = std::coroutine_handle<promise_type>;
     struct final_awaiter;
     struct awaiter;
-
-    auto operator co_await() && noexcept { return awaiter{ handle_ }; }
-    // ^^^ compiler hooks
 
 private:
     explicit coroutine(handle_type handle) : handle_{ handle } {}
@@ -32,28 +32,29 @@ public:
         }
     }
 
-    coroutine(const coroutine&) = delete;
-    coroutine& operator=(const coroutine&) = delete;
     coroutine(coroutine&& other) noexcept : handle_{ std::exchange(other.handle_, {}) } {}
-    coroutine& operator=(coroutine&& other) noexcept { std::swap(handle_, other.handle_); }
 
     void start() { handle_.resume(); }
 
     [[nodiscard]] auto result() && {
-        ASSUME(handle_.done());
+        ASSERT(handle_.done());
         return std::move(handle_.promise()).get_return();
     }
     [[nodiscard]] auto result_or_throw() && {
-        ASSUME(handle_.done());
+        ASSERT(handle_.done());
         return std::move(handle_.promise()).get_return_or_throw();
     }
+
+    // vvv compiler hooks
+    auto operator co_await() && noexcept { return awaiter{ handle_ }; }
+    // ^^^ compiler hooks
 
 private:
     handle_type handle_;
 };
 
 template <typename T>
-struct coroutine<T>::promise_type : public detail::promise_result_mixin<T> {
+struct coroutine<T>::promise_type : detail::promise_result_mixin<T> {
     // vvv compiler hooks
     auto get_return_object() { return coroutine{ handle_type::from_promise(*this) }; };
     auto initial_suspend() { return std::suspend_always{}; }
@@ -99,4 +100,4 @@ private:
     handle_type handle_;
 };
 
-} // namespace sl::exec::coro
+} // namespace sl::exec

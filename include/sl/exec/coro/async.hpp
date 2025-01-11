@@ -47,8 +47,10 @@ struct [[nodiscard]] async : meta::immovable {
     struct awaiter;
     struct final_awaiter;
 
-public:
+private:
     explicit async(handle_type handle) : handle_{ handle } {}
+
+public:
     ~async() {
         if (handle_) {
             DEBUG_ASSERT(handle_.done());
