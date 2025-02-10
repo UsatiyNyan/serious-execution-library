@@ -48,7 +48,7 @@ concept Event = requires(EventT& event) {
 template <Signal SignalT>
 using ISlotFor = slot<typename SignalT::value_type, typename SignalT::error_type>;
 
-template <Signal SignalT, std::derived_from<ISlotFor<SignalT>> SlotT>
-using ConnectionFor = decltype(std::declval<SignalT&&>().subscribe(std::declval<SlotT&>()));
+template <Signal SignalT>
+using ConnectionFor = decltype(std::declval<SignalT&&>().subscribe(std::declval<ISlotFor<SignalT>&>()));
 
 } // namespace sl::exec

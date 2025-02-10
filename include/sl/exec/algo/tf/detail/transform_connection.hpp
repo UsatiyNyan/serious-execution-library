@@ -19,7 +19,7 @@ struct [[nodiscard]] transform_connection : meta::immovable {
 
 private:
     SlotT slot_;
-    ConnectionFor<SignalT, SlotT> connection_;
+    ConnectionFor<SignalT> connection_;
 };
 
 } // namespace sl::exec

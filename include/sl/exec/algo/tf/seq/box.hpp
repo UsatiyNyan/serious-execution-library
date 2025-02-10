@@ -33,7 +33,7 @@ struct box_storage final : box_storage_base<ValueT, ErrorT> {
 
 private:
     SignalT signal_;
-    tl::optional<ConnectionFor<SignalT, slot<ValueT, ErrorT>>> connection_;
+    tl::optional<ConnectionFor<SignalT>> connection_;
 };
 
 } // namespace detail

@@ -6,7 +6,7 @@
 
 #include "sl/exec/model/concept.hpp"
 
-#include <tl/optional.hpp>
+#include <sl/meta/monad/maybe.hpp>
 
 namespace sl::exec {
 
@@ -21,7 +21,7 @@ constexpr auto operator|(SignalT&& signal, ContinuationTV&& continuation) {
 }
 
 template <typename ValueT, typename ErrorT>
-void fulfill_slot(slot<ValueT, ErrorT>& slot, tl::optional<meta::result<ValueT, ErrorT>> maybe_result) {
+void fulfill_slot(slot<ValueT, ErrorT>& slot, meta::maybe<meta::result<ValueT, ErrorT>> maybe_result) {
     if (!maybe_result.has_value()) {
         slot.cancel();
         return;

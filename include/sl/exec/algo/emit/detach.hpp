@@ -32,7 +32,7 @@ public:
 
 private:
     detach_slot slot_;
-    ConnectionFor<SignalT, detach_slot> connection_;
+    ConnectionFor<SignalT> connection_;
 };
 
 struct detach_emit {

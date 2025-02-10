@@ -13,11 +13,11 @@
 #include <sl/meta/lifetime/defer.hpp>
 #include <sl/meta/lifetime/immovable.hpp>
 #include <sl/meta/lifetime/lazy_eval.hpp>
+#include <sl/meta/monad/maybe.hpp>
 #include <sl/meta/tuple/for_each.hpp>
 #include <sl/meta/type/list.hpp>
 
 #include <atomic>
-#include <tl/optional.hpp>
 
 namespace sl::exec {
 namespace detail {
@@ -127,7 +127,7 @@ private:
 
 private:
     connections_type connections_;
-    std::tuple<tl::optional<typename SignalTs::value_type>...> maybe_results_{};
+    std::tuple<meta::maybe<typename SignalTs::value_type>...> maybe_results_{};
     alignas(hardware_destructive_interference_size) std::atomic<std::uint32_t> counter_{ 0 };
     alignas(hardware_destructive_interference_size) std::atomic<bool> done_{ false };
     slot<ValueT, ErrorT>& slot_;
