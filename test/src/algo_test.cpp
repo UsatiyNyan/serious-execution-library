@@ -104,4 +104,12 @@ TEST(algo, andSimple) {
     ASSERT_EQ(*maybe_result, std::make_tuple(42, 69));
 }
 
+TEST(algo, forkSimple) {
+    auto [l_signal, r_signal] = value_as_signal(42) | fork();
+    auto l_value = std::move(l_signal) | get<nowait_event>();
+    auto r_value = std::move(r_signal) | map([](int x) { return x + 27; }) | get<nowait_event>();
+    EXPECT_EQ(*l_value, 42);
+    EXPECT_EQ(*r_value, 69);
+}
+
 } // namespace sl::exec

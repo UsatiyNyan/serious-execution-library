@@ -6,3 +6,4 @@
 
 #include "sl/exec/algo/tf/par/all.hpp"
 #include "sl/exec/algo/tf/par/any.hpp"
+#include "sl/exec/algo/tf/par/fork.hpp"
