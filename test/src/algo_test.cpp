@@ -112,4 +112,22 @@ TEST(algo, forkSimple) {
     EXPECT_EQ(*r_value, 69);
 }
 
+TEST(algo, subscribe) {
+    manual_executor executor;
+
+    int value = 0;
+    subscribe_connection imalive = value_as_signal(42) //
+                                   | on(executor) //
+                                   | map([&value](int x) {
+                                         value = x;
+                                         return meta::unit{};
+                                     })
+                                   | subscribe();
+    imalive.emit();
+
+    EXPECT_EQ(value, 0);
+    EXPECT_EQ(executor.execute_at_most(1), 1);
+    EXPECT_EQ(value, 42);
+}
+
 } // namespace sl::exec
