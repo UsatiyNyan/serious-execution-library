@@ -8,9 +8,8 @@
 #include "sl/exec/algo/make/schedule.hpp"
 #include "sl/exec/algo/sched/on.hpp"
 #include "sl/exec/algo/sync/serial.hpp"
-#include "sl/exec/model/concept.hpp"
 
-#include <tl/expected.hpp>
+#include "sl/exec/model.hpp"
 
 namespace sl::exec {
 

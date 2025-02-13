@@ -5,10 +5,7 @@
 #include "sl/exec/algo.hpp"
 #include "sl/exec/coro.hpp"
 
-#include "sl/exec/algo/sched/manual.hpp"
-
 #include <gtest/gtest.h>
-#include <sl/meta/func/undefined.hpp>
 
 namespace sl::exec {
 
@@ -346,33 +343,30 @@ TEST(coro, awaitSignal) {
 }
 
 TEST(coro, awaitExecutor) {
-    manual_executor coro_executor;
-    manual_executor signal_executor;
+    manual_executor executor1;
+    manual_executor executor2;
 
-    int coro_counter = 0;
-    int signal_counter = 0;
+    int counter1 = 0;
+    int counter2 = 0;
 
     auto coro = [&] -> async<void> {
-        ++coro_counter;
-        co_await schedule(signal_executor, [&] {
-            ++signal_counter;
-            return meta::result<meta::unit, meta::undefined>{};
-        });
-        ++coro_counter;
+        ++counter1;
+        co_await schedule(executor2);
+        ++counter2;
     };
-    coro_schedule(coro_executor, coro());
+    coro_schedule(executor1, coro());
 
-    EXPECT_EQ(coro_executor.execute_batch(), 1);
-    ASSERT_EQ(coro_counter, 1);
-    ASSERT_EQ(signal_counter, 0);
+    EXPECT_EQ(executor1.execute_batch(), 1);
+    ASSERT_EQ(counter1, 1);
+    ASSERT_EQ(counter2, 0);
 
-    EXPECT_EQ(coro_executor.execute_batch(), 0);
-    ASSERT_EQ(coro_counter, 1);
-    ASSERT_EQ(signal_counter, 0);
+    EXPECT_EQ(executor1.execute_batch(), 0);
+    ASSERT_EQ(counter1, 1);
+    ASSERT_EQ(counter2, 0);
 
-    EXPECT_EQ(signal_executor.execute_batch(), 1);
-    ASSERT_EQ(coro_counter, 2);
-    ASSERT_EQ(signal_counter, 1);
+    EXPECT_EQ(executor2.execute_batch(), 1);
+    ASSERT_EQ(counter1, 1);
+    ASSERT_EQ(counter2, 1);
 }
 
 } // namespace sl::exec
