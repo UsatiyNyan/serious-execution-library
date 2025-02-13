@@ -24,6 +24,15 @@ struct slot {
     virtual void cancel() & = 0;
 };
 
+template <typename ValueT, typename ErrorT>
+struct dummy_slot final : slot<ValueT, ErrorT> {
+    explicit dummy_slot() = default;
+
+    void set_value(ValueT&&) & override {}
+    void set_error(ErrorT&&) & override {}
+    void cancel() & override {}
+};
+
 template <typename ConnectionT>
 concept Connection = requires(ConnectionT& connection) { connection.emit(); };
 
