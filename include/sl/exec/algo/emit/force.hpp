@@ -6,7 +6,6 @@
 
 #include "sl/exec/algo/tf/detail/transform_connection.hpp"
 #include "sl/exec/model/concept.hpp"
-#include <sl/meta/intrusive/forward_list.hpp>
 
 #include <sl/meta/lifetime/defer.hpp>
 #include <sl/meta/monad/maybe.hpp>
@@ -101,12 +100,12 @@ private:
 };
 
 template <Signal SignalT>
-struct [[nodiscard]] force_signal {
+struct [[nodiscard]] force_signal : meta::unique {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
     explicit force_signal(SignalT&& signal)
-        : executor_{ signal.get_executor() }, storage_{ new force_storage{ std::move(signal) } } {}
+        : executor_{ &signal.get_executor() }, storage_{ new force_storage{ std::move(signal) } } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
         auto* storage_ptr = std::exchange(storage_, nullptr);
@@ -117,10 +116,10 @@ struct [[nodiscard]] force_signal {
         };
     }
 
-    executor& get_executor() { return executor_; }
+    executor& get_executor() & { return *executor_; }
 
 private:
-    executor& executor_;
+    executor* executor_;
     force_storage<SignalT>* storage_;
 };
 

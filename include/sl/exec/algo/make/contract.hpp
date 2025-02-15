@@ -9,6 +9,7 @@
 #include "sl/exec/model/concept.hpp"
 
 #include <sl/meta/lifetime/immovable.hpp>
+#include <sl/meta/lifetime/unique.hpp>
 
 #include <libassert/assert.hpp>
 #include <tl/optional.hpp>
@@ -16,27 +17,26 @@
 namespace sl::exec {
 namespace detail {
 
-struct [[nodiscard]] promise_connection {
+struct [[nodiscard]] promise_connection : meta::immovable {
     void emit() & noexcept {}
 };
 
 template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] promise_signal {
+struct [[nodiscard]] promise_signal : meta::unique {
     using value_type = ValueT;
     using error_type = ErrorT;
 
-    explicit promise_signal(tl::optional<slot<ValueT, ErrorT>&>& maybe_promise_slot)
-        : maybe_promise_slot_{ maybe_promise_slot } {}
+    explicit promise_signal(slot<ValueT, ErrorT>** slot) : slot_{ slot } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
-        maybe_promise_slot_.emplace(slot);
+        *slot_ = &slot;
         return promise_connection{};
     }
 
     executor& get_executor() { return exec::inline_executor(); }
 
 private:
-    tl::optional<slot<ValueT, ErrorT>&>& maybe_promise_slot_;
+    slot<ValueT, ErrorT>** slot_;
 };
 
 } // namespace detail
@@ -44,44 +44,58 @@ private:
 template <typename ValueT, typename ErrorT>
 struct [[nodiscard]] promise
     : slot<ValueT, ErrorT>
-    , meta::immovable {
-    explicit promise(slot<ValueT, ErrorT>& slot) : slot_{ slot } {}
+    , meta::unique {
+    explicit promise(slot<ValueT, ErrorT>* slot) : slot_{ slot } { DEBUG_ASSERT(slot_ != nullptr); }
     ~promise() override {
-        if (!done_) {
-            slot_.cancel();
+        if (slot_ != nullptr && !done_) {
+            slot_->cancel();
         }
     }
+    promise(promise&& other) noexcept
+        : slot_{ std::exchange(other.slot_, nullptr) }, done_{ std::exchange(other.done_, false) } {}
 
     void set_value(ValueT&& value) & override {
         if (ASSUME_VAL(!done_)) {
-            slot_.set_value(std::move(value));
+            slot_->set_value(std::move(value));
             done_ = true;
         }
     }
     void set_error(ErrorT&& error) & override {
         if (ASSUME_VAL(!done_)) {
-            slot_.set_error(std::move(error));
+            slot_->set_error(std::move(error));
             done_ = true;
         }
     }
     void cancel() & override {
         if (ASSUME_VAL(!done_)) {
-            slot_.cancel();
+            slot_->cancel();
             done_ = true;
         }
     }
 
 private:
-    slot<ValueT, ErrorT>& slot_;
+    slot<ValueT, ErrorT>* slot_;
     bool done_ = false;
 };
 
 template <typename ValueT, typename ErrorT>
-std::tuple<detail::force_signal<detail::promise_signal<ValueT, ErrorT>>, promise<ValueT, ErrorT>> make_contract() {
-    tl::optional<slot<ValueT, ErrorT>&> maybe_promise_slot;
-    auto signal = force()(detail::promise_signal<ValueT, ErrorT>{ maybe_promise_slot });
-    DEBUG_ASSERT(maybe_promise_slot.has_value());
-    return std::make_tuple(std::move(signal), promise<ValueT, ErrorT>{ maybe_promise_slot.value() });
+struct contract {
+    using future_type = detail::force_signal<detail::promise_signal<ValueT, ErrorT>>;
+    using promise_type = promise<ValueT, ErrorT>;
+
+    future_type future;
+    promise_type promise;
+};
+
+template <typename ValueT, typename ErrorT>
+contract<ValueT, ErrorT> make_contract() {
+    slot<ValueT, ErrorT>* promise_slot = nullptr;
+    detail::force_signal<detail::promise_signal<ValueT, ErrorT>> signal =
+        force()(detail::promise_signal<ValueT, ErrorT>{ &promise_slot });
+    return contract<ValueT, ErrorT>{
+        .future = std::move(signal),
+        .promise{ promise_slot },
+    };
 }
 
 } // namespace sl::exec

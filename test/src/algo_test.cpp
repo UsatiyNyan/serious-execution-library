@@ -130,4 +130,32 @@ TEST(algo, subscribe) {
     EXPECT_EQ(value, 42);
 }
 
+TEST(algo, force) {
+    auto [future, promise] = exec::make_contract<int, meta::undefined>();
+    promise.set_value(42);
+    const int result = (std::move(future) | get<nowait_event>()).value().value();
+    EXPECT_EQ(result, 42);
+}
+
+TEST(algo, forceMany) {
+    using contract_type = contract<int, meta::undefined>;
+    std::vector<contract_type::promise_type> promises;
+    std::vector<int> results(10, 0);
+
+    for (std::size_t i = 0; i != results.size(); ++i) {
+        auto [future, promise] = exec::make_contract<int, meta::undefined>();
+        std::move(future) | map([&results, i](int x) {
+            results[i] = x;
+            return meta::unit{};
+        }) | detach();
+        promises.push_back(std::move(promise));
+    }
+
+    for (auto& promise : promises) {
+        promise.set_value(42);
+    }
+
+    EXPECT_EQ(std::vector<int>(10, 42), results);
+}
+
 } // namespace sl::exec
