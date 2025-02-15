@@ -5,8 +5,6 @@
 
 #pragma once
 
-#include <libassert/assert.hpp>
-
 namespace sl::exec {
 
 struct nowait_event {

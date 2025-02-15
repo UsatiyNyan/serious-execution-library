@@ -11,7 +11,7 @@
 
 namespace sl::exec {
 
-TEST(algo, threadPool) {
+TEST(thread, monolithicThreadPool) {
     monolithic_thread_pool background_executor{ thread_pool_config::with_hw_limit(1u) };
     const tl::optional<meta::result<std::thread::id, meta::undefined>> maybe_result =
         schedule(
