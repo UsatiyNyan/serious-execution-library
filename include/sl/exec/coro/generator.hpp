@@ -51,8 +51,8 @@ public:
         return std::move(handle_.promise()).get_return_or_throw();
     }
 
-    [[nodiscard]] auto begin() { return iterator{ *this }; }
-    [[nodiscard]] auto end() { return std::default_sentinel; }
+    auto begin() { return iterator{ *this }; }
+    auto end() { return std::default_sentinel; }
 
 private:
     handle_type handle_;
@@ -94,17 +94,28 @@ private:
 };
 
 template <typename YieldT, typename ReturnT>
-struct generator<YieldT, ReturnT>::iterator {
+struct [[nodiscard]] generator<YieldT, ReturnT>::iterator {
+    using iterator_category = std::input_iterator_tag;
+    using value_type = YieldT;
+    using difference_type = std::ptrdiff_t;
+
+    iterator() = default;
     explicit iterator(generator<YieldT, ReturnT>& self) : self_{ &self } { advance(); }
 
     iterator& operator++() {
         advance();
         return *this;
     }
+    void operator++(int) { advance(); }
 
-    [[nodiscard]] YieldT& operator*() {
+    [[nodiscard]] value_type& operator*() const {
         ASSERT(maybe_value_.has_value());
         return maybe_value_.value();
+    }
+
+    [[nodiscard]] value_type* operator->() const {
+        ASSERT(maybe_value_.has_value());
+        return &maybe_value_.value();
     }
 
     [[nodiscard]] bool operator==(std::default_sentinel_t) const { return self_ == nullptr; }
@@ -119,8 +130,8 @@ private:
     }
 
 private:
-    meta::maybe<YieldT> maybe_value_{};
-    generator<YieldT, ReturnT>* self_;
+    mutable meta::maybe<YieldT> maybe_value_{};
+    generator<YieldT, ReturnT>* self_ = nullptr;
 };
 
 } // namespace sl::exec

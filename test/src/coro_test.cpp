@@ -5,6 +5,9 @@
 #include "sl/exec/algo.hpp"
 #include "sl/exec/coro.hpp"
 
+#include <range/v3/view/enumerate.hpp>
+#include <range/v3/view/take.hpp>
+
 #include <gtest/gtest.h>
 
 namespace sl::exec {
@@ -123,7 +126,7 @@ TEST(coro, generator) {
     EXPECT_EQ(maybe_14.value(), 14);
 }
 
-TEST(coro, generator_iterator) {
+TEST(coro, generatorIterator) {
     auto create_iota = [](int begin, int end) -> generator<int> {
         for (int i = begin; i < end; ++i) {
             co_yield i;
@@ -138,6 +141,23 @@ TEST(coro, generator_iterator) {
         ++counter;
     }
     EXPECT_EQ(counter, end);
+}
+
+TEST(coro, generatorEnumerate) {
+    constexpr auto generate_spam = [] -> generator<std::string_view> {
+        while (true) {
+            co_yield "spam";
+        }
+    };
+
+    int counter = 0;
+    auto generator = generate_spam();
+    for (const auto [i, x] : generator | ranges::views::enumerate | ranges::views::take(3)) {
+        EXPECT_EQ(i, counter);
+        EXPECT_EQ(x, "spam");
+        ++counter;
+    }
+    EXPECT_EQ(counter, 3);
 }
 
 generator<int> create_nesting_iota(int begin, int end, int level = 0) {
