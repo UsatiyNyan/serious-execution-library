@@ -389,4 +389,13 @@ TEST(coro, awaitExecutor) {
     ASSERT_EQ(counter2, 1);
 }
 
+TEST(coro, awaitVoid) {
+    auto coro = [] -> async<void> {
+        auto inner_coro = [] -> async<void> { co_return; };
+        co_await inner_coro();
+        co_return;
+    };
+    coro_schedule(exec::inline_executor(), coro());
+}
+
 } // namespace sl::exec

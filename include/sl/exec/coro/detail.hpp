@@ -61,7 +61,11 @@ struct promise_result_mixin : public promise_result_mixin_base<T> {
         if (!return_value.has_value()) [[unlikely]] {
             std::rethrow_exception(return_value.error());
         }
-        return std::move(return_value).value();
+        if constexpr (std::is_same_v<T, void>) {
+            return;
+        } else {
+            return std::move(return_value).value();
+        }
     }
 
     void try_rethrow() & {
