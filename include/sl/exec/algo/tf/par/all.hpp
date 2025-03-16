@@ -54,8 +54,8 @@ public:
     all_connection(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
         : connections_{ make_connections(std::move(signals), std::index_sequence_for<SignalTs...>{}) }, slot_{ slot } {}
 
-    void emit() & {
-        meta::for_each([](Connection auto& connection) { connection.emit(); }, connections_);
+    void emit() && {
+        meta::for_each([](Connection auto&& connection) { std::move(connection).emit(); }, std::move(connections_));
     };
 
 private:
@@ -141,7 +141,10 @@ struct all_connection_box {
               /* .slot = */ slot
           ) } {}
 
-    void emit() & { connection_.release()->emit(); }
+    void emit() && {
+        auto& connection = *DEBUG_ASSERT_VAL(connection_.release());
+        std::move(connection).emit();
+    }
 
 private:
     std::unique_ptr<all_connection<ValueT, ErrorT, SignalTs...>> connection_;

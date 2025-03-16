@@ -49,8 +49,8 @@ public:
           ) },
           slot_{ slot } {}
 
-    void emit() & {
-        meta::for_each([](Connection auto& connection) { connection.emit(); }, connections_);
+    void emit() && {
+        meta::for_each([](Connection auto&& connection) { std::move(connection).emit(); }, std::move(connections_));
     };
 
 private:
@@ -114,10 +114,9 @@ struct any_connection_box {
               /* .slot = */ slot
           ) } {}
 
-    void emit() & {
-        auto* connection_ptr = connection_.release();
-        DEBUG_ASSERT(connection_ptr != nullptr);
-        connection_ptr->emit();
+    void emit() && {
+        auto& connection = *DEBUG_ASSERT_VAL(connection_.release());
+        std::move(connection).emit();
     }
 
 private:

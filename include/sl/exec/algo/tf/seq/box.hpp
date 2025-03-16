@@ -18,7 +18,7 @@ struct box_storage_base {
 
     virtual void subscribe(slot<ValueT, ErrorT>&) & = 0;
     virtual executor& get_executor() & = 0;
-    virtual void emit() & = 0;
+    virtual void emit() && = 0;
 };
 
 template <
@@ -45,7 +45,7 @@ struct [[nodiscard]] box_connection {
         storage_->subscribe(slot);
     }
 
-    void emit() & { storage_->emit(); }
+    void emit() && { storage_->emit(); }
 
 private:
     std::unique_ptr<detail::box_storage_base<ValueT, ErrorT>> storage_;

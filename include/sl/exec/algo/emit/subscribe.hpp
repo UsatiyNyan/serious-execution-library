@@ -22,10 +22,10 @@ class [[nodiscard]] subscribe_connection : meta::immovable {
     using error_type = typename SignalT::error_type;
 
 public:
-    subscribe_connection(SignalT signal, SlotT slot)
+    constexpr subscribe_connection(SignalT signal, SlotT slot)
         : slot_{ std::move(slot) }, connection_{ std::move(signal).subscribe(slot_) } {}
 
-    void emit() & { connection_.emit(); }
+    void emit() && { std::move(connection_).emit(); }
 
 private:
     SlotT slot_{};

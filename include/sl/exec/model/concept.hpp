@@ -34,7 +34,7 @@ struct dummy_slot final : slot<ValueT, ErrorT> {
 };
 
 template <typename ConnectionT>
-concept Connection = requires(ConnectionT& connection) { connection.emit(); };
+concept Connection = requires(ConnectionT&& connection) { std::move(connection).emit(); };
 
 template <typename SignalT>
 concept Signal = requires(

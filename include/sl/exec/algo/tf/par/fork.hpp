@@ -87,7 +87,7 @@ public:
         }
     }
 
-    void emit(fork_slot_node<value_type, error_type>& slot_node) & {
+    void emit(fork_slot_node<value_type, error_type>& slot_node) && {
         std::uintptr_t state = fork_state_empty;
         if (state_.compare_exchange_strong(
                 state,
@@ -95,7 +95,7 @@ public:
                 std::memory_order::release,
                 std::memory_order::acquire
             )) {
-            connection_.emit();
+            std::move(connection_).emit();
             return;
         }
 
@@ -159,11 +159,15 @@ struct [[nodiscard]] fork_connection_box : meta::immovable {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
+public:
     fork_connection_box(fork_connection<SignalT>* connection_ptr, slot<value_type, error_type>& slot)
         : connection_ptr_{ connection_ptr }, slot_node_{ slot } {}
     ~fork_connection_box() { fork_connection<SignalT>::try_decref(connection_ptr_); }
 
-    void emit() & { DEBUG_ASSERT_VAL(std::exchange(connection_ptr_, nullptr))->emit(slot_node_); }
+    void emit() && {
+        auto& connection = *DEBUG_ASSERT_VAL(std::exchange(connection_ptr_, nullptr));
+        std::move(connection).emit(slot_node_);
+    }
 
 private:
     fork_connection<SignalT>* connection_ptr_;

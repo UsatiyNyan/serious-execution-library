@@ -15,6 +15,7 @@ struct [[nodiscard]] on_signal {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
+public:
     on_signal(SignalT&& signal, executor& executor) : signal_{ std::move(signal) }, executor_{ executor } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && { return std::move(signal_).subscribe(slot); }

@@ -47,11 +47,10 @@ struct signal_awaiter {
     void await_suspend(std::coroutine_handle<> handle) {
         DEBUG_ASSERT(std::holds_alternative<SignalT>(state_));
         auto signal = std::get<SignalT>(std::move(state_));
-        state_
-            .template emplace<subscribe_connection<SignalT, awaiter_slot<value_type, error_type>>>(
-                std::move(signal), awaiter_slot<value_type, error_type>{ std::move(handle), maybe_result_ }
-            )
-            .emit();
+        auto& connection = state_.template emplace<subscribe_connection<SignalT, awaiter_slot<value_type, error_type>>>(
+            std::move(signal), awaiter_slot<value_type, error_type>{ std::move(handle), maybe_result_ }
+        );
+        std::move(connection).emit();
     }
     meta::result<value_type, error_type> await_resume() {
         DEBUG_ASSERT(maybe_result_.has_value());

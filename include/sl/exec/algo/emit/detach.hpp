@@ -26,9 +26,9 @@ class detach_connection {
     };
 
 public:
-    detach_connection(SignalT&& signal) : slot_{ this }, connection_{ std::move(signal).subscribe(slot_) } {}
+    constexpr detach_connection(SignalT&& signal) : slot_{ this }, connection_{ std::move(signal).subscribe(slot_) } {}
 
-    void emit() & { connection_.emit(); }
+    void emit() && { std::move(connection_).emit(); }
 
 private:
     detach_slot slot_;
@@ -38,7 +38,8 @@ private:
 struct detach_emit {
     template <Signal SignalT>
     constexpr void operator()(SignalT&& signal) && {
-        (new detach_connection<SignalT>{ std::move(signal) })->emit();
+        auto& connection = *(new detach_connection<SignalT>{ std::move(signal) });
+        std::move(connection).emit();
     }
 };
 

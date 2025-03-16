@@ -43,7 +43,7 @@ struct [[nodiscard]] get_emit {
         get_slot<value_type, error_type, EventT> slot;
         auto connection = std::move(signal).subscribe(slot);
 
-        connection.emit();
+        std::move(connection).emit();
         slot.event.wait();
 
         return slot.maybe_result;

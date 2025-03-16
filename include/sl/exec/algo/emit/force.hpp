@@ -43,7 +43,7 @@ struct [[nodiscard]] force_storage {
 
 public:
     explicit force_storage(SignalT&& signal) : connection_{ std::move(signal), force_slot{ *this } } {
-        connection_.emit();
+        std::move(connection_).emit();
     }
 
     void set_result(meta::maybe<result_type> result) {
@@ -89,10 +89,11 @@ struct force_connection {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
-    explicit force_connection(force_storage<SignalT>& storage, slot<value_type, error_type>& slot)
+public:
+    force_connection(force_storage<SignalT>& storage, slot<value_type, error_type>& slot)
         : storage_{ storage }, slot_{ slot } {}
 
-    void emit() & { storage_.set_slot(slot_); }
+    void emit() && { storage_.set_slot(slot_); }
 
 private:
     force_storage<SignalT>& storage_;

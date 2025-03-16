@@ -11,10 +11,10 @@ namespace detail {
 
 template <typename F, typename ValueT, typename ErrorT>
 struct [[nodiscard]] schedule_connection : task_node {
-    schedule_connection(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
+    constexpr schedule_connection(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
         : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
 
-    void emit() & noexcept { executor_.schedule(this); }
+    void emit() && noexcept { executor_.schedule(this); }
 
     void execute() noexcept override {
         auto result = functor_();
@@ -38,18 +38,22 @@ struct [[nodiscard]] schedule_signal {
     using value_type = typename result_type::value_type;
     using error_type = typename result_type::error_type;
 
-    F functor;
-    executor& executor;
+public:
+    constexpr schedule_signal(F functor, executor& executor) : functor_{ std::move(functor) }, executor_{ executor } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
         return schedule_connection<F, value_type, error_type>{
-            /* .functor = */ std::move(functor),
+            /* .functor = */ std::move(functor_),
             /* .slot = */ slot,
-            /* .executor = */ executor,
+            /* .executor = */ executor_,
         };
     }
 
-    auto& get_executor() { return executor; }
+    executor& get_executor() { return executor_; }
+
+private:
+    F functor_;
+    executor& executor_;
 };
 
 } // namespace detail
@@ -58,8 +62,8 @@ template <typename FV>
 constexpr Signal auto schedule(executor& executor, FV&& functor) {
     using F = std::decay_t<FV>;
     return detail::schedule_signal<F>{
-        .functor = std::forward<FV>(functor),
-        .executor = executor,
+        /* .functor = */ std::forward<FV>(functor),
+        /* .executor = */ executor,
     };
 }
 

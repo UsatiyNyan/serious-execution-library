@@ -18,7 +18,7 @@ namespace sl::exec {
 namespace detail {
 
 struct [[nodiscard]] promise_connection : meta::immovable {
-    void emit() & noexcept {}
+    void emit() && noexcept {}
 };
 
 template <typename ValueT, typename ErrorT>
@@ -26,6 +26,7 @@ struct [[nodiscard]] promise_signal : meta::unique {
     using value_type = ValueT;
     using error_type = ErrorT;
 
+public:
     explicit promise_signal(slot<ValueT, ErrorT>** slot) : slot_{ slot } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {

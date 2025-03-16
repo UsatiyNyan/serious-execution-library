@@ -123,7 +123,7 @@ TEST(algo, subscribe) {
                                          return meta::unit{};
                                      })
                                    | subscribe();
-    imalive.emit();
+    std::move(imalive).emit();
 
     EXPECT_EQ(value, 0);
     EXPECT_EQ(executor.execute_at_most(1), 1);
