@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "sl/exec/algo/tf/detail/transform_connection.hpp"
+#include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/model/syntax.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
@@ -148,7 +148,7 @@ private:
     }
 
 private:
-    transform_connection<SignalT, fork_slot> connection_;
+    subscribe_connection<SignalT, fork_slot> connection_;
     meta::maybe<result_type> maybe_result_{};
     alignas(hardware_destructive_interference_size) std::atomic<std::uint32_t> counter_;
     alignas(hardware_destructive_interference_size) std::atomic<std::uintptr_t> state_{ fork_state_empty };

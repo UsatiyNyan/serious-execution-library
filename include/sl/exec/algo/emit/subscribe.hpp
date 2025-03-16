@@ -16,18 +16,19 @@
 
 namespace sl::exec {
 
-template <Signal SignalT>
+template <Signal SignalT, typename SlotT>
 class [[nodiscard]] subscribe_connection : meta::immovable {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
 public:
-    explicit subscribe_connection(SignalT&& signal) : connection_{ std::move(signal).subscribe(slot_) } {}
+    subscribe_connection(SignalT signal, SlotT slot)
+        : slot_{ std::move(slot) }, connection_{ std::move(signal).subscribe(slot_) } {}
 
     void emit() & { connection_.emit(); }
 
 private:
-    dummy_slot<value_type, error_type> slot_{};
+    SlotT slot_{};
     ConnectionFor<SignalT> connection_;
 };
 
@@ -36,7 +37,12 @@ namespace detail {
 struct subscribe_emit {
     template <Signal SignalT>
     constexpr Connection auto operator()(SignalT&& signal) && {
-        return subscribe_connection<SignalT>{ std::move(signal) };
+        using value_type = typename SignalT::value_type;
+        using error_type = typename SignalT::error_type;
+        return subscribe_connection{
+            /* .signal = */ std::move(signal),
+            /* .slot = */ dummy_slot<value_type, error_type>{},
+        };
     }
 };
 

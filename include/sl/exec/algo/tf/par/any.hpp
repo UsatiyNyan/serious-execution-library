@@ -4,8 +4,8 @@
 
 #pragma once
 
+#include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/algo/sched/inline.hpp"
-#include "sl/exec/algo/tf/detail/transform_connection.hpp"
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
 
@@ -39,7 +39,7 @@ public:
         : connections_{ meta::for_each(
               [this](auto&& signal) {
                   return meta::lazy_eval{ [this, signal = std::move(signal)]() mutable {
-                      return transform_connection{
+                      return subscribe_connection{
                           /* .signal = */ std::move(signal),
                           /* .slot =  */ any_slot{ *this },
                       };
@@ -100,7 +100,7 @@ private:
     }
 
 private:
-    std::tuple<transform_connection<SignalTs, any_slot>...> connections_;
+    std::tuple<subscribe_connection<SignalTs, any_slot>...> connections_;
     alignas(hardware_destructive_interference_size) std::atomic<std::uint32_t> counter_{ 0 };
     alignas(hardware_destructive_interference_size) std::atomic<bool> done_{ false };
     slot<ValueT, ErrorT>& slot_;

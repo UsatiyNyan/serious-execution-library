@@ -5,8 +5,8 @@
 
 #pragma once
 
+#include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/algo/sched/inline.hpp"
-#include "sl/exec/algo/tf/detail/transform_connection.hpp"
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
 
@@ -46,7 +46,7 @@ private:
     struct connections_derive;
     template <std::size_t... Idxs>
     struct connections_derive<std::index_sequence<Idxs...>> {
-        using type = std::tuple<transform_connection<SignalTs, all_slot<Idxs>>...>;
+        using type = std::tuple<subscribe_connection<SignalTs, all_slot<Idxs>>...>;
     };
     using connections_type = typename connections_derive<std::index_sequence_for<SignalTs...>>::type;
 
@@ -62,7 +62,7 @@ private:
     template <std::size_t... Idxs>
     auto make_connections(std::tuple<SignalTs...>&& signals, std::index_sequence<Idxs...>) {
         return std::make_tuple(meta::lazy_eval{ [this, signal = std::move(signals)]() mutable {
-            return transform_connection{
+            return subscribe_connection{
                 /* .signal = */ std::get<Idxs>(std::move(signal)),
                 /* .slot =  */ all_slot<Idxs>{ *this },
             };

@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "sl/exec/algo/tf/detail/transform_connection.hpp"
+#include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/model/concept.hpp"
 
 #include <sl/meta/lifetime/defer.hpp>
@@ -79,7 +79,7 @@ public:
     }
 
 private:
-    transform_connection<SignalT, force_slot> connection_;
+    subscribe_connection<SignalT, force_slot> connection_;
     meta::maybe<result_type> maybe_result_;
     std::atomic<std::uintptr_t> state_{ force_state_empty };
 };

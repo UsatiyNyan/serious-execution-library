@@ -4,12 +4,12 @@
 
 #pragma once
 
-#include "sl/exec/algo/tf/detail/transform_connection.hpp"
+#include "sl/exec/algo/emit/subscribe.hpp"
 
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/model/executor.hpp"
 
-#include <tl/optional.hpp>
+#include <sl/meta/monad/maybe.hpp>
 
 namespace sl::exec {
 namespace detail {
@@ -45,8 +45,8 @@ struct [[nodiscard]] map_error_slot : slot<ValueT, InputErrorT> {
 
 private:
     F functor_;
-    ::tl::optional<InputErrorT> maybe_error_{};
-    ::tl::optional<map_error_task> maybe_task_{};
+    meta::maybe<InputErrorT> maybe_error_{};
+    meta::maybe<map_error_task> maybe_task_{};
     slot<ValueT, ErrorT>& slot_;
     executor& executor_;
 };
@@ -60,7 +60,7 @@ struct [[nodiscard]] map_error_signal {
     F functor;
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
-        return transform_connection{
+        return subscribe_connection{
             /* .signal = */ std::move(signal),
             /* .slot = */
             map_error_slot<value_type, typename SignalT::error_type, error_type, F>{

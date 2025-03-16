@@ -4,12 +4,13 @@
 
 #pragma once
 
-#include "sl/exec/algo/tf/detail/transform_connection.hpp"
+#include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/model/concept.hpp"
 
+#include <sl/meta/monad/maybe.hpp>
+#include <sl/meta/monad/result.hpp>
+
 #include <coroutine>
-#include <tl/expected.hpp>
-#include <tl/optional.hpp>
 #include <variant>
 
 namespace sl::exec {
@@ -17,7 +18,7 @@ namespace detail {
 
 template <typename ValueT, typename ErrorT>
 struct awaiter_slot : slot<ValueT, ErrorT> {
-    explicit awaiter_slot(std::coroutine_handle<>&& handle, tl::optional<meta::result<ValueT, ErrorT>>& maybe_result)
+    explicit awaiter_slot(std::coroutine_handle<>&& handle, meta::maybe<meta::result<ValueT, ErrorT>>& maybe_result)
         : handle_{ std::move(handle) }, maybe_result_{ maybe_result } {}
 
     void set_value(ValueT&& value) & override {
@@ -32,7 +33,7 @@ struct awaiter_slot : slot<ValueT, ErrorT> {
 
 private:
     std::coroutine_handle<> handle_;
-    tl::optional<meta::result<ValueT, ErrorT>>& maybe_result_;
+    meta::maybe<meta::result<ValueT, ErrorT>>& maybe_result_;
 };
 
 template <Signal SignalT>
@@ -47,7 +48,7 @@ struct signal_awaiter {
         DEBUG_ASSERT(std::holds_alternative<SignalT>(state_));
         auto signal = std::get<SignalT>(std::move(state_));
         state_
-            .template emplace<transform_connection<SignalT, awaiter_slot<value_type, error_type>>>(
+            .template emplace<subscribe_connection<SignalT, awaiter_slot<value_type, error_type>>>(
                 std::move(signal), awaiter_slot<value_type, error_type>{ std::move(handle), maybe_result_ }
             )
             .emit();
@@ -58,8 +59,8 @@ struct signal_awaiter {
     }
 
 private:
-    std::variant<SignalT, transform_connection<SignalT, awaiter_slot<value_type, error_type>>> state_;
-    tl::optional<meta::result<value_type, error_type>> maybe_result_;
+    std::variant<SignalT, subscribe_connection<SignalT, awaiter_slot<value_type, error_type>>> state_;
+    meta::maybe<meta::result<value_type, error_type>> maybe_result_;
 };
 
 } // namespace detail
