@@ -3,7 +3,10 @@ For serious programmers.
 
 # WIP
 
-Reworking currently, making those futures lazier:
-- [ ] subscribe and transform connection are basically the same thing
-- [ ] TESTS
+- [ ] query executor
+- [ ] try_reschedule_or_continue_executing - new on
+- [ ] reschedule - old on
+- [ ] repeatable connection
 - [ ] thread::pool::distributed
+- [ ] TESTS
+
