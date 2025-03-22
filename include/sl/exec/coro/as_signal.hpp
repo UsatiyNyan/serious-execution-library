@@ -10,6 +10,7 @@
 #include "sl/exec/model/concept.hpp"
 
 #include <exception>
+#include <sl/meta/lifetime/defer.hpp>
 
 namespace sl::exec::detail {
 
@@ -23,11 +24,19 @@ public:
 
 private:
     static async<void> make_connection_coro(async<ValueT> async, slot<ValueT, ErrorT>& slot) {
+        // coroutine handle can be destroyed at any point, when executor destroys it's tasks
+        bool is_fulfilled = false;
+        const meta::defer cancel_if_not_fulfilled{ [&] {
+            if (!is_fulfilled) {
+                slot.cancel();
+            }
+        } };
         try {
             slot.set_value(co_await std::move(async));
         } catch (...) {
             slot.set_error(std::current_exception());
         }
+        is_fulfilled = true;
     }
 
 private:
