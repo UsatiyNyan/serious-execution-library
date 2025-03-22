@@ -4,6 +4,7 @@
 
 #include "sl/exec/algo.hpp"
 #include "sl/exec/coro.hpp"
+#include "sl/exec/thread.hpp"
 
 #include <range/v3/view/enumerate.hpp>
 #include <range/v3/view/take.hpp>
@@ -396,6 +397,39 @@ TEST(coro, awaitVoid) {
         co_return;
     };
     coro_schedule(exec::inline_executor(), coro());
+}
+
+TEST(coro, asSignal) {
+    {
+        auto maybe_result = as_signal([] -> async<int> { co_return 42; }()) //
+                            | map([](int x) { return std::to_string(x); }) //
+                            | get<nowait_event>();
+        ASSERT_TRUE(maybe_result.has_value());
+        auto result = std::move(maybe_result).value();
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result.value(), "42");
+    }
+
+    {
+        auto maybe_result = as_signal([] -> async<int> {
+                                throw std::runtime_error{ "hehe" };
+                                co_return 42;
+                            }()) //
+                            | map_error([](std::exception_ptr ex_ptr) -> std::string {
+                                  try {
+                                      std::rethrow_exception(ex_ptr);
+                                  } catch (std::runtime_error& ex) {
+                                      return ex.what();
+                                  } catch (...) {
+                                      return "invalid exception";
+                                  }
+                              }) //
+                            | get<nowait_event>();
+        ASSERT_TRUE(maybe_result.has_value());
+        auto result = std::move(maybe_result).value();
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error(), "hehe");
+    }
 }
 
 } // namespace sl::exec

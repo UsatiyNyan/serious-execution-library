@@ -11,5 +11,6 @@
 
 // execution integration
 #include "sl/exec/coro/async.hpp"
+#include "sl/exec/coro/as_signal.hpp"
 #include "sl/exec/coro/async_gen.hpp"
 #include "sl/exec/coro/await.hpp"
