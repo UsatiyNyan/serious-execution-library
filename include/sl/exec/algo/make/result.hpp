@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "sl/exec/algo/make/as_signal.hpp"
 #include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/model/concept.hpp"
 
@@ -38,7 +39,7 @@ struct [[nodiscard]] result_signal {
     using error_type = ErrorT;
 
 public:
-    explicit constexpr result_signal(meta::result<value_type, error_type> result) : result_{ std::move(result) } {}
+    constexpr explicit result_signal(meta::result<value_type, error_type> result) : result_{ std::move(result) } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
         return result_connection<value_type, error_type>{
@@ -53,12 +54,15 @@ private:
     meta::result<value_type, error_type> result_;
 };
 
-} // namespace detail
-
 template <typename ValueT, typename ErrorT>
-constexpr Signal auto as_signal(meta::result<ValueT, ErrorT> result) {
-    return detail::result_signal<ValueT, ErrorT>{ /* .result = */ std::move(result) };
-}
+struct as_signal<meta::result<ValueT, ErrorT>> {
+    template <typename ResultTV>
+    constexpr static Signal auto call(ResultTV&& result) {
+        return result_signal<ValueT, ErrorT>{ /* .result = */ std::forward<ResultTV>(result) };
+    }
+};
+
+} // namespace detail
 
 template <typename ValueTV>
 constexpr Signal auto value_as_signal(ValueTV&& value) {
