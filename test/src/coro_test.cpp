@@ -372,7 +372,7 @@ TEST(coro, awaitExecutor) {
 
     auto coro = [&] -> async<void> {
         ++counter1;
-        co_await schedule(executor2);
+        co_await start_on(executor2);
         ++counter2;
     };
     coro_schedule(executor1, coro());

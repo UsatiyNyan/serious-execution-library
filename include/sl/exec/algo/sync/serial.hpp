@@ -14,14 +14,9 @@
 namespace sl::exec {
 
 struct serial_executor : executor {
-    explicit serial_executor(executor& executor) : task_{ *this }, executor_{ executor } {}
-
-    void schedule(task_node* task_node) noexcept override;
-    void stop() noexcept override;
-
 private:
     struct serial_executor_task : task_node {
-        explicit serial_executor_task(serial_executor& self) : self_{ self } {}
+        constexpr explicit serial_executor_task(serial_executor& self) : self_{ self } {}
 
         void execute() noexcept override;
         void cancel() noexcept override { self_.stop(); }
@@ -29,6 +24,14 @@ private:
     private:
         serial_executor& self_;
     };
+
+public:
+    constexpr explicit serial_executor(executor& executor) : task_{ *this }, executor_{ executor } {}
+
+    void schedule(task_node* task_node) noexcept override;
+    void stop() noexcept override;
+
+    constexpr executor& get_inner() const { return executor_; }
 
 private:
     serial_executor_task task_;

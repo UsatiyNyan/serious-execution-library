@@ -7,8 +7,6 @@
 #include "sl/exec/thread/event.hpp"
 
 #include <gtest/gtest.h>
-#include <sl/meta/func/undefined.hpp>
-#include <sl/meta/monad/result.hpp>
 
 namespace sl::exec {
 
@@ -55,11 +53,11 @@ TEST(algo, orElse) {
     ASSERT_EQ(*maybe_result, meta::err(std::string{ "43" }));
 }
 
-TEST(algo, manualSchedule) {
+TEST(algo, manualStartOn) {
     manual_executor executor;
 
     bool done = false;
-    schedule(executor) //
+    start_on(executor) //
         | map([&done](meta::unit) {
               done = true;
               return meta::unit{};
@@ -68,18 +66,16 @@ TEST(algo, manualSchedule) {
 
     ASSERT_FALSE(done);
     executor.execute_at_most(1);
-    ASSERT_FALSE(done);
-    executor.execute_at_most(1);
     ASSERT_TRUE(done);
 }
 
-TEST(algo, manualScheduleImmediate) {
+TEST(algo, manualSchedule) {
     manual_executor executor;
 
     bool done = false;
-    schedule(executor, [&done] {
+    schedule(executor, [&done] -> meta::result<meta::unit, meta::undefined> {
         done = true;
-        return meta::result<meta::unit, meta::undefined>{};
+        return {};
     }) | detach();
 
     ASSERT_FALSE(done);
@@ -117,7 +113,7 @@ TEST(algo, subscribe) {
 
     int value = 0;
     subscribe_connection imalive = value_as_signal(42) //
-                                   | on(executor) //
+                                   | continue_on(executor) //
                                    | map([&value](int x) {
                                          value = x;
                                          return meta::unit{};

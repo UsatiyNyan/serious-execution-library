@@ -11,12 +11,13 @@ namespace sl::exec {
 namespace detail {
 
 template <Signal SignalT>
-struct [[nodiscard]] on_signal {
+struct [[nodiscard]] continue_on_signal {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
 public:
-    on_signal(SignalT&& signal, executor& executor) : signal_{ std::move(signal) }, executor_{ executor } {}
+    constexpr continue_on_signal(SignalT&& signal, executor& executor)
+        : signal_{ std::move(signal) }, executor_{ executor } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && { return std::move(signal_).subscribe(slot); }
 
@@ -27,24 +28,27 @@ private:
     executor& executor_;
 };
 
-struct [[nodiscard]] on {
-    executor& executor;
+struct [[nodiscard]] continue_on {
+    constexpr explicit continue_on(executor& executor) : executor_{ executor } {}
 
     template <Signal SignalT>
     constexpr Signal auto operator()(SignalT&& signal) && {
-        return on_signal<SignalT>{
+        return continue_on_signal<SignalT>{
             /* .signal = */ std::move(signal),
-            /* .executor = */ executor,
+            /* .executor = */ executor_,
         };
     }
+
+private:
+    executor& executor_;
 };
 
 } // namespace detail
 
 
-constexpr auto on(executor& executor) {
-    return detail::on{
-        .executor = executor,
+constexpr auto continue_on(executor& executor) {
+    return detail::continue_on{
+        /* .executor = */ executor,
     };
 }
 
