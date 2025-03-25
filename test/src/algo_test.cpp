@@ -154,4 +154,28 @@ TEST(algo, forceMany) {
     EXPECT_EQ(std::vector<int>(10, 42), results);
 }
 
+TEST(algo, queryExecutor) {
+    const auto maybe_inline_result = start_on(inline_executor()) //
+                                     | query_executor()
+                                     | map([](std::pair<executor&, meta::unit> p) -> executor* { return &p.first; })
+                                     | get<nowait_event>();
+    ASSERT_TRUE(maybe_inline_result.has_value());
+    const auto& inline_result = maybe_inline_result.value();
+    ASSERT_TRUE(inline_result.has_value());
+    EXPECT_EQ(inline_result.value(), &inline_executor());
+
+    manual_executor manual_executor;
+    executor* manual_executor_ptr = nullptr;
+    start_on(manual_executor) //
+        | query_executor() //
+        | map([&manual_executor_ptr](std::pair<executor&, meta::unit> p) {
+              manual_executor_ptr = &p.first;
+              return meta::unit{};
+          })
+        | detach();
+    ASSERT_EQ(manual_executor_ptr, nullptr);
+    manual_executor.execute_at_most(1);
+    EXPECT_EQ(manual_executor_ptr, &manual_executor);
+}
+
 } // namespace sl::exec
