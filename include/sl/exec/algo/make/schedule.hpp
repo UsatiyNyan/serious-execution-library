@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/model/concept.hpp"
 
 namespace sl::exec {
@@ -49,7 +50,7 @@ public:
         };
     }
 
-    executor& get_executor() { return executor_; }
+    executor& get_executor() { return exec::inline_executor(); }
 
 private:
     F functor_;

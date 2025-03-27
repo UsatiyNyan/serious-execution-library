@@ -60,13 +60,14 @@ struct [[nodiscard]] map_error_signal {
     F functor;
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
+        executor& executor = signal.get_executor();
         return subscribe_connection{
             /* .signal = */ std::move(signal),
             /* .slot = */
             map_error_slot<value_type, typename SignalT::error_type, error_type, F>{
                 /* .functor = */ std::move(functor),
                 /* .slot = */ slot,
-                /* .executor = */ get_executor(),
+                /* .executor = */ executor,
             },
         };
     }
