@@ -3,7 +3,7 @@ For serious programmers.
 
 # WIP
 
-- [ ] flatten/flat_map
+- [ ] shared_connection/future
 - [ ] repeatable connection
 - [ ] thread::pool::distributed
 - [ ] TESTS

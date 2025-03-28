@@ -178,4 +178,95 @@ TEST(algo, queryExecutor) {
     EXPECT_EQ(manual_executor_ptr, &manual_executor);
 }
 
+TEST(algo, flattenSchedule) {
+    manual_executor executor1;
+    manual_executor executor2;
+    bool done1 = false;
+    bool done2 = false;
+
+    schedule(
+        executor1,
+        [&] {
+            done1 = true;
+            return meta::ok(schedule(executor2, [&] {
+                done2 = true;
+                return meta::ok(meta::unit{});
+            }));
+        }
+    ) | flatten()
+        | detach();
+
+    ASSERT_FALSE(done1);
+    ASSERT_FALSE(done2);
+
+    EXPECT_EQ(executor2.execute_batch(), 0);
+    EXPECT_FALSE(done1);
+    EXPECT_FALSE(done2);
+
+    EXPECT_EQ(executor1.execute_batch(), 1);
+    EXPECT_TRUE(done1);
+    EXPECT_FALSE(done2);
+
+    EXPECT_EQ(executor1.execute_batch(), 0);
+    EXPECT_TRUE(done1);
+    EXPECT_FALSE(done2);
+
+    EXPECT_EQ(executor2.execute_batch(), 1);
+    EXPECT_TRUE(done1);
+    EXPECT_TRUE(done2);
+
+    EXPECT_EQ(executor1.execute_batch(), 0);
+    EXPECT_EQ(executor2.execute_batch(), 0);
+}
+
+TEST(algo, flattenAndThen) {
+    manual_executor executor1;
+    manual_executor executor2;
+    std::size_t counter1 = 0;
+    bool done2 = false;
+
+    start_on(executor1) //
+        | and_then([&](meta::unit) {
+              ++counter1;
+              return meta::ok(
+                  start_on(executor2) //
+                  | map([&](meta::unit) {
+                        done2 = true;
+                        return meta::unit{};
+                    })
+              );
+          })
+        | flatten() //
+        | and_then([&](meta::unit) {
+              ++counter1; // continue execution on the "outer" executor
+              return meta::ok(meta::unit{});
+          })
+        | detach();
+
+    ASSERT_EQ(counter1, 0);
+    ASSERT_FALSE(done2);
+
+    EXPECT_EQ(executor2.execute_batch(), 0);
+    EXPECT_EQ(counter1, 0);
+    EXPECT_FALSE(done2);
+
+    EXPECT_EQ(executor1.execute_batch(), 1);
+    EXPECT_EQ(counter1, 1);
+    EXPECT_FALSE(done2);
+
+    EXPECT_EQ(executor1.execute_batch(), 0);
+    EXPECT_EQ(counter1, 1);
+    EXPECT_FALSE(done2);
+
+    EXPECT_EQ(executor2.execute_batch(), 1);
+    EXPECT_EQ(counter1, 1);
+    EXPECT_TRUE(done2);
+
+    EXPECT_EQ(executor1.execute_batch(), 1);
+    EXPECT_EQ(counter1, 2);
+    EXPECT_TRUE(done2);
+
+    EXPECT_EQ(executor1.execute_batch(), 0);
+    EXPECT_EQ(executor2.execute_batch(), 0);
+}
 } // namespace sl::exec

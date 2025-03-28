@@ -25,6 +25,11 @@ public:
     constexpr subscribe_connection(SignalT signal, SlotT slot)
         : slot_{ std::move(slot) }, connection_{ std::move(signal).subscribe(slot_) } {}
 
+    // lazy construction for certain purposes
+    template <std::invocable<> MakeSlotT>
+    constexpr subscribe_connection(SignalT signal, MakeSlotT make_slot)
+        : slot_{ make_slot() }, connection_{ std::move(signal).subscribe(slot_) } {}
+
     void emit() && { std::move(connection_).emit(); }
 
 private:
