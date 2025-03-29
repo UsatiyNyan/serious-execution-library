@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/model/concept.hpp"
 
 namespace sl::exec {
@@ -26,13 +27,12 @@ class detach_connection {
     };
 
 public:
-    constexpr detach_connection(SignalT&& signal) : slot_{ this }, connection_{ std::move(signal).subscribe(slot_) } {}
+    constexpr detach_connection(SignalT&& signal) : connection_{ std::move(signal), detach_slot{ this } } {}
 
     void emit() && { std::move(connection_).emit(); }
 
 private:
-    detach_slot slot_;
-    ConnectionFor<SignalT> connection_;
+    subscribe_connection<SignalT, detach_slot> connection_;
 };
 
 struct detach_emit {

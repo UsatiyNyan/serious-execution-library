@@ -8,6 +8,7 @@
 
 #include <sl/meta/func/undefined.hpp>
 #include <sl/meta/func/unit.hpp>
+#include <sl/meta/lifetime/immovable.hpp>
 #include <sl/meta/monad/result.hpp>
 
 #include <concepts>
@@ -35,6 +36,10 @@ struct dummy_slot final : slot<ValueT, ErrorT> {
 
 template <typename ConnectionT>
 concept Connection = requires(ConnectionT&& connection) { std::move(connection).emit(); };
+
+struct [[nodiscard]] dummy_connection : meta::immovable {
+    constexpr void emit() && {}
+};
 
 template <typename SignalT>
 concept Signal = requires(
