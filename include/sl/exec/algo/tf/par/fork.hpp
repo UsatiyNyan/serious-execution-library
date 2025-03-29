@@ -25,21 +25,6 @@
 namespace sl::exec {
 namespace detail {
 
-template <typename ValueT, typename ErrorT>
-struct fork_slot_node
-    : slot<ValueT, ErrorT>
-    , meta::intrusive_forward_list_node<fork_slot_node<ValueT, ErrorT>> {
-
-    explicit fork_slot_node(slot<ValueT, ErrorT>& slot) : slot_{ slot } {}
-
-    void set_value(ValueT&& value) & override { slot_.set_value(std::move(value)); }
-    void set_error(ErrorT&& error) & override { slot_.set_error(std::move(error)); }
-    void cancel() & override { slot_.cancel(); }
-
-private:
-    slot<ValueT, ErrorT>& slot_;
-};
-
 template <Signal SignalT>
 struct fork_connection {
     using value_type = typename SignalT::value_type;
@@ -87,7 +72,7 @@ public:
         }
     }
 
-    void emit(fork_slot_node<value_type, error_type>& slot_node) && {
+    void emit(exec::slot_node<value_type, error_type>& slot_node) && {
         std::uintptr_t state = fork_state_empty;
         if (state_.compare_exchange_strong(
                 state,
@@ -100,7 +85,7 @@ public:
         }
 
         do {
-            slot_node.intrusive_next = reinterpret_cast<fork_slot_node<value_type, error_type>*>(state);
+            slot_node.intrusive_next = reinterpret_cast<exec::slot_node<value_type, error_type>*>(state);
         } while (state != fork_state_result
                  && !state_.compare_exchange_weak(
                      state,
@@ -128,10 +113,10 @@ private:
         }
         DEBUG_ASSERT(state != fork_state_result);
 
-        auto* slot_list = reinterpret_cast<fork_slot_node<value_type, error_type>*>(state);
+        auto* slot_list = reinterpret_cast<exec::slot_node<value_type, error_type>*>(state);
         const std::uint32_t slot_list_count = [slot_list] {
             std::uint32_t counter = 0;
-            meta::intrusive_forward_list_node_for_each(slot_list, [&counter](fork_slot_node<value_type, error_type>*) {
+            meta::intrusive_forward_list_node_for_each(slot_list, [&counter](exec::slot_node<value_type, error_type>*) {
                 ++counter;
             });
             return counter;
@@ -140,7 +125,7 @@ private:
         meta::defer cleanup{ [this, slot_list_count] { decref(slot_list_count); } };
         meta::intrusive_forward_list_node_for_each(
             slot_list,
-            [this](fork_slot_node<value_type, error_type>* slot_node_ptr) {
+            [this](exec::slot_node<value_type, error_type>* slot_node_ptr) {
                 // exlicit copy, unfortunately
                 fulfill_slot(*slot_node_ptr, meta::maybe<result_type>{ maybe_result_ });
             }
@@ -161,7 +146,7 @@ struct [[nodiscard]] fork_connection_box : meta::immovable {
 
 public:
     fork_connection_box(fork_connection<SignalT>* connection_ptr, slot<value_type, error_type>& slot)
-        : connection_ptr_{ connection_ptr }, slot_node_{ slot } {}
+        : slot_node_{ slot }, connection_ptr_{ connection_ptr } {}
     ~fork_connection_box() { fork_connection<SignalT>::try_decref(connection_ptr_); }
 
     void emit() && {
@@ -170,8 +155,8 @@ public:
     }
 
 private:
+    exec::slot_node<value_type, error_type> slot_node_;
     fork_connection<SignalT>* connection_ptr_;
-    fork_slot_node<value_type, error_type> slot_node_;
 };
 
 template <Signal SignalT>

@@ -8,6 +8,7 @@
 
 #include <sl/meta/func/undefined.hpp>
 #include <sl/meta/func/unit.hpp>
+#include <sl/meta/intrusive/forward_list.hpp>
 #include <sl/meta/lifetime/immovable.hpp>
 #include <sl/meta/monad/result.hpp>
 
@@ -33,6 +34,24 @@ struct dummy_slot final : slot<ValueT, ErrorT> {
     void set_error(ErrorT&&) & override {}
     void cancel() & override {}
 };
+
+template <typename ValueT, typename ErrorT>
+struct slot_node
+    : slot<ValueT, ErrorT>
+    , meta::intrusive_forward_list_node<slot_node<ValueT, ErrorT>> {
+
+    constexpr explicit slot_node(slot<ValueT, ErrorT>& slot) : slot_{ slot } {}
+
+    void set_value(ValueT&& value) & override { slot_.set_value(std::move(value)); }
+    void set_error(ErrorT&& error) & override { slot_.set_error(std::move(error)); }
+    void cancel() & override { slot_.cancel(); }
+
+private:
+    slot<ValueT, ErrorT>& slot_;
+};
+
+template <typename ValueT, typename ErrorT>
+using slot_list = meta::intrusive_forward_list<slot_node<ValueT, ErrorT>>;
 
 template <typename ConnectionT>
 concept Connection = requires(ConnectionT&& connection) { std::move(connection).emit(); };
