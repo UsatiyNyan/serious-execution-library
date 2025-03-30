@@ -7,7 +7,8 @@
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/model/executor.hpp"
 
-#include <tl/optional.hpp>
+#include <sl/meta/lifetime/lazy_eval.hpp>
+#include <sl/meta/monad/maybe.hpp>
 
 namespace sl::exec {
 namespace detail {
@@ -26,14 +27,20 @@ template <
     typename ValueT = typename SignalT::value_type,
     typename ErrorT = typename SignalT::error_type>
 struct box_storage final : box_storage_base<ValueT, ErrorT> {
-    explicit box_storage(SignalT&& signal) : signal_{ std::move(signal) } {}
+    constexpr explicit box_storage(SignalT&& signal) : signal_{ std::move(signal) } {}
 
-    void subscribe(slot<ValueT, ErrorT>& slot) & override { connection_.emplace(std::move(signal_).subscribe(slot)); }
+    void subscribe(slot<ValueT, ErrorT>& slot) & override {
+        maybe_connection_.emplace(meta::lazy_eval{ [&] { return std::move(signal_).subscribe(slot); } });
+    }
     executor& get_executor() & override { return signal_.get_executor(); }
+    void emit() && override {
+        DEBUG_ASSERT(maybe_connection_.has_value());
+        std::move(maybe_connection_).value().emit();
+    }
 
 private:
+    meta::maybe<ConnectionFor<SignalT>> maybe_connection_{};
     SignalT signal_;
-    tl::optional<ConnectionFor<SignalT>> connection_;
 };
 
 } // namespace detail
@@ -45,7 +52,10 @@ struct [[nodiscard]] box_connection {
         storage_->subscribe(slot);
     }
 
-    void emit() && { storage_->emit(); }
+    void emit() && {
+        detail::box_storage_base<ValueT, ErrorT>& storage = *storage_;
+        std::move(storage).emit();
+    }
 
 private:
     std::unique_ptr<detail::box_storage_base<ValueT, ErrorT>> storage_;
@@ -56,8 +66,9 @@ struct [[nodiscard]] box_signal {
     using value_type = ValueT;
     using error_type = ErrorT;
 
+public:
     template <Signal SignalT>
-    constexpr box_signal(SignalT&& signal)
+    constexpr explicit box_signal(SignalT&& signal)
         : storage_{ std::make_unique<detail::box_storage<SignalT>>(std::move(signal)) } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {

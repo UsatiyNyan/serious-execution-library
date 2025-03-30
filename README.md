@@ -9,7 +9,6 @@ For serious programmers.
 
 # TODO
 
-- [ ] fix box
 - [ ] require noexcept from all slot-s
 - [ ] thread::pool::distributed
 - [ ] TESTS

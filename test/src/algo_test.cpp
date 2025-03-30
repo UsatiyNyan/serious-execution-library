@@ -325,4 +325,13 @@ TEST(algo, flattenAndThen) {
     EXPECT_EQ(executor1.execute_batch(), 0);
     EXPECT_EQ(executor2.execute_batch(), 0);
 }
+
+TEST(algo, box) {
+    auto signal = value_as_signal(42) | and_then([](int x) { return meta::ok(x + 27); });
+    box_signal<int, meta::undefined> boxed_signal = std::move(signal) | box();
+    const auto maybe_result = std::move(boxed_signal) | get<nowait_event>();
+    ASSERT_TRUE(maybe_result.has_value());
+    EXPECT_EQ(maybe_result.value(), 69);
+}
+
 } // namespace sl::exec
