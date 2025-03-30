@@ -8,3 +8,4 @@
 #include "sl/exec/algo/emit/detach.hpp"
 #include "sl/exec/algo/emit/force.hpp"
 #include "sl/exec/algo/emit/subscribe.hpp"
+#include "sl/exec/algo/emit/share.hpp"

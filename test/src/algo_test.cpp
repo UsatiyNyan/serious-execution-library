@@ -83,6 +83,24 @@ TEST(algo, manualSchedule) {
     ASSERT_TRUE(done);
 }
 
+TEST(algo, subscribe) {
+    manual_executor executor;
+
+    int value = 0;
+    subscribe_connection imalive = value_as_signal(42) //
+                                   | continue_on(executor) //
+                                   | map([&value](int x) {
+                                         value = x;
+                                         return meta::unit{};
+                                     })
+                                   | subscribe();
+    std::move(imalive).emit();
+
+    EXPECT_EQ(value, 0);
+    EXPECT_EQ(executor.execute_at_most(1), 1);
+    EXPECT_EQ(value, 42);
+}
+
 TEST(algo, anySimple) {
     using result_type = meta::result<int, int>;
     auto s1 = as_signal(result_type{ tl::unexpect, 69 });
@@ -100,30 +118,68 @@ TEST(algo, andSimple) {
     ASSERT_EQ(*maybe_result, std::make_tuple(42, 69));
 }
 
+TEST(algo, share) {
+    manual_executor executor;
+
+    bool done1 = false;
+    auto signal1 = schedule(
+                       executor,
+                       [&done1] {
+                           done1 = true;
+                           return meta::ok(42);
+                       }
+                   )
+                   | continue_on(executor); // this continue should not affect
+    meta::maybe<share_box<int, meta::undefined>> maybe_shared{ std::move(signal1) | share() };
+    auto& shared = maybe_shared.value();
+
+    // check lazyness
+    EXPECT_EQ(executor.execute_batch(), 0);
+    EXPECT_FALSE(done1);
+
+    int result2 = 0;
+    auto signal2 = shared.get_signal() | map([&result2](int x) {
+                       result2 = x;
+                       return meta::unit{};
+                   });
+
+    // check lazyness
+    EXPECT_EQ(executor.execute_batch(), 0);
+    EXPECT_FALSE(done1);
+    EXPECT_EQ(result2, 0);
+
+    std::move(signal2) | detach();
+
+    // check fulfillment
+    EXPECT_EQ(executor.execute_batch(), 1);
+    EXPECT_TRUE(done1);
+    EXPECT_EQ(result2, 42);
+
+    // check eagerness
+    const auto maybe_result3 = shared.get_signal() | map([](int x) { return x + 27; }) | get<nowait_event>();
+
+    EXPECT_EQ(executor.execute_batch(), 0);
+    ASSERT_TRUE(maybe_result3.has_value());
+    ASSERT_TRUE(maybe_result3->has_value());
+    EXPECT_EQ(maybe_result3->value(), 69);
+
+    // check refcount
+    auto signal4 = shared.get_signal();
+    auto signal5 = shared.get_signal(); // valgrind will fail here
+    maybe_shared.reset();
+    const auto maybe_result4 = std::move(signal4) | get<nowait_event>();
+    EXPECT_EQ(executor.execute_batch(), 0);
+    ASSERT_TRUE(maybe_result4.has_value());
+    ASSERT_TRUE(maybe_result4->has_value());
+    EXPECT_EQ(maybe_result4->value(), 42);
+}
+
 TEST(algo, forkSimple) {
     auto [l_signal, r_signal] = value_as_signal(42) | fork();
     auto l_value = std::move(l_signal) | get<nowait_event>();
     auto r_value = std::move(r_signal) | map([](int x) { return x + 27; }) | get<nowait_event>();
     EXPECT_EQ(*l_value, 42);
     EXPECT_EQ(*r_value, 69);
-}
-
-TEST(algo, subscribe) {
-    manual_executor executor;
-
-    int value = 0;
-    subscribe_connection imalive = value_as_signal(42) //
-                                   | continue_on(executor) //
-                                   | map([&value](int x) {
-                                         value = x;
-                                         return meta::unit{};
-                                     })
-                                   | subscribe();
-    std::move(imalive).emit();
-
-    EXPECT_EQ(value, 0);
-    EXPECT_EQ(executor.execute_at_most(1), 1);
-    EXPECT_EQ(value, 42);
 }
 
 TEST(algo, force) {

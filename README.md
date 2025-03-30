@@ -9,8 +9,8 @@ For serious programmers.
 
 # TODO
 
-- [ ] shared_connection/future
 - [ ] fix box
+- [ ] require noexcept from all slot-s
 - [ ] thread::pool::distributed
 - [ ] TESTS
 - [ ] pseudo-atomics, parametrize emits and executors with atomic
