@@ -9,8 +9,9 @@
 #include "sl/exec/coro/async.hpp"
 #include "sl/exec/model/concept.hpp"
 
-#include <exception>
 #include <sl/meta/lifetime/defer.hpp>
+
+#include <exception>
 
 namespace sl::exec::detail {
 

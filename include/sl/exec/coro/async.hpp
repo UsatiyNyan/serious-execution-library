@@ -7,7 +7,7 @@
 #include "sl/exec/coro/detail.hpp"
 #include "sl/exec/model/executor.hpp"
 
-#include <sl/meta/lifetime/immovable.hpp>
+#include <sl/meta/traits/unique.hpp>
 
 #include <libassert/assert.hpp>
 

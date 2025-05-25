@@ -7,7 +7,6 @@
 #include "sl/exec/thread.hpp"
 
 #include <gtest/gtest.h>
-#include <sl/meta/func/undefined.hpp>
 
 namespace sl::exec {
 

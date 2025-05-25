@@ -10,7 +10,7 @@
 #include "sl/exec/thread/pool/config.hpp"
 #include "sl/exec/thread/sync/wait_group.hpp"
 
-#include <sl/meta/lifetime/immovable.hpp>
+#include <sl/meta/traits/unique.hpp>
 
 #include <thread>
 

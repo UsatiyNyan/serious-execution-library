@@ -8,7 +8,8 @@
 #include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/model/concept.hpp"
 
-#include <tl/expected.hpp>
+#include <sl/meta/monad/result.hpp>
+
 #include <type_traits>
 #include <utility>
 
@@ -66,14 +67,13 @@ struct as_signal<meta::result<ValueT, ErrorT>> {
 
 template <typename ValueTV>
 constexpr Signal auto value_as_signal(ValueTV&& value) {
-    using ValueT = std::decay_t<ValueTV>;
-    return as_signal(meta::result<ValueT, meta::undefined>{ tl::in_place, std::forward<ValueTV>(value) });
+    return as_signal(meta::ok(std::forward<ValueTV>(value)));
 }
 
 template <typename ErrorTV>
 constexpr Signal auto error_as_signal(ErrorTV&& error) {
     using ErrorT = std::decay_t<ErrorTV>;
-    return as_signal(meta::result<meta::unit, ErrorT>{ tl::unexpect, std::forward<ErrorTV>(error) });
+    return as_signal(meta::result<meta::unit, ErrorT>{ meta::err(std::forward<ErrorTV>(error)) });
 }
 
 } // namespace sl::exec

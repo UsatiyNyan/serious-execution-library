@@ -12,7 +12,7 @@
 
 #include "sl/exec/model/concept.hpp"
 
-#include <sl/meta/lifetime/immovable.hpp>
+#include <sl/meta/traits/unique.hpp>
 
 namespace sl::exec {
 

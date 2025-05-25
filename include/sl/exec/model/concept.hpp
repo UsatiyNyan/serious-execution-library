@@ -6,11 +6,11 @@
 
 #include "sl/exec/model/executor.hpp"
 
-#include <sl/meta/func/undefined.hpp>
-#include <sl/meta/func/unit.hpp>
 #include <sl/meta/intrusive/forward_list.hpp>
-#include <sl/meta/lifetime/immovable.hpp>
 #include <sl/meta/monad/result.hpp>
+#include <sl/meta/traits/unique.hpp>
+#include <sl/meta/type/undefined.hpp>
+#include <sl/meta/type/unit.hpp>
 
 #include <concepts>
 #include <utility>

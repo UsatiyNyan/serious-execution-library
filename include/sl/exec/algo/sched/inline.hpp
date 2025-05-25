@@ -6,7 +6,7 @@
 
 #include "sl/exec/model/executor.hpp"
 
-#include <sl/meta/func/unit.hpp>
+#include <sl/meta/type/unit.hpp>
 
 #include <libassert/assert.hpp>
 

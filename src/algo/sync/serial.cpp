@@ -4,9 +4,9 @@
 
 #include "sl/exec/algo/sync/serial.hpp"
 
-#include <sl/meta/func/unit.hpp>
 #include <sl/meta/intrusive/algorithm.hpp>
 #include <sl/meta/monad/result.hpp>
+#include <sl/meta/type/unit.hpp>
 
 namespace sl::exec {
 void serial_executor::schedule(task_node* task_node) noexcept {

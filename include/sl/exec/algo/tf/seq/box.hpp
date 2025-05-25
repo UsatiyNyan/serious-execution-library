@@ -7,7 +7,7 @@
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/model/executor.hpp"
 
-#include <sl/meta/lifetime/lazy_eval.hpp>
+#include <sl/meta/func/lazy_eval.hpp>
 #include <sl/meta/monad/maybe.hpp>
 
 namespace sl::exec {

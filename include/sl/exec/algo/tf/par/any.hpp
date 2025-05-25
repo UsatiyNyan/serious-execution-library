@@ -1,5 +1,6 @@
 //
 // Created by usatiynyan.
+// TODO: template from <Atomic> and allow "no-wait"
 //
 
 #pragma once
@@ -9,11 +10,11 @@
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
 
+#include <sl/meta/func/lazy_eval.hpp>
 #include <sl/meta/lifetime/defer.hpp>
-#include <sl/meta/lifetime/immovable.hpp>
-#include <sl/meta/lifetime/lazy_eval.hpp>
+#include <sl/meta/traits/unique.hpp>
 #include <sl/meta/tuple/for_each.hpp>
-#include <sl/meta/type/list.hpp>
+#include <sl/meta/type/pack.hpp>
 
 #include <atomic>
 

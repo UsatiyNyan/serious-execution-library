@@ -1,6 +1,5 @@
 //
 // Created by usatiynyan.
-// TODO(@usatiynyan): async_generator
 //
 
 #pragma once

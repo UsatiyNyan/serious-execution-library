@@ -8,11 +8,9 @@
 #include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/model/concept.hpp"
 
-#include <sl/meta/lifetime/immovable.hpp>
-#include <sl/meta/lifetime/unique.hpp>
+#include <sl/meta/traits/unique.hpp>
 
 #include <libassert/assert.hpp>
-#include <tl/optional.hpp>
 
 namespace sl::exec {
 namespace detail {

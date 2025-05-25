@@ -6,7 +6,7 @@
 
 #include "sl/exec/coro/detail.hpp"
 
-#include <sl/meta/lifetime/immovable.hpp>
+#include <sl/meta/traits/unique.hpp>
 
 #include <coroutine>
 #include <iterator>
