@@ -21,7 +21,7 @@
 namespace sl::exec {
 namespace detail {
 
-template <typename ValueT, typename ErrorT, Signal... SignalTs>
+template <typename ValueT, typename ErrorT, SomeSignal... SignalTs>
 struct any_connection : meta::immovable {
 private:
     struct any_slot : slot<ValueT, ErrorT> {
@@ -107,7 +107,7 @@ private:
     slot<ValueT, ErrorT>& slot_;
 };
 
-template <typename ValueT, typename ErrorT, Signal... SignalTs>
+template <typename ValueT, typename ErrorT, SomeSignal... SignalTs>
 struct any_connection_box {
     any_connection_box(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
         : connection_{ std::make_unique<any_connection<ValueT, ErrorT, SignalTs...>>(
@@ -124,7 +124,7 @@ private:
     std::unique_ptr<any_connection<ValueT, ErrorT, SignalTs...>> connection_;
 };
 
-template <Signal... SignalTs>
+template <SomeSignal... SignalTs>
     requires meta::type::are_same_v<typename SignalTs::value_type...>
              && meta::type::are_same_v<typename SignalTs::error_type...>
 struct [[nodiscard]] any_signal {
@@ -150,7 +150,7 @@ private:
 } // namespace detail
 
 template <typename... SignalTV>
-constexpr Signal auto any(SignalTV&&... signals) {
+constexpr SomeSignal auto any(SignalTV&&... signals) {
     return detail::any_signal<std::decay_t<SignalTV>...>{
         /* .signals = */ std::forward<SignalTV>(signals)...,
     };

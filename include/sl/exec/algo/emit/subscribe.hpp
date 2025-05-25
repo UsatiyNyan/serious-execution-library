@@ -16,7 +16,7 @@
 
 namespace sl::exec {
 
-template <Signal SignalT, typename SlotT>
+template <SomeSignal SignalT, typename SlotT>
 class [[nodiscard]] subscribe_connection : meta::immovable {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
@@ -40,7 +40,7 @@ private:
 namespace detail {
 
 struct subscribe_emit {
-    template <Signal SignalT>
+    template <SomeSignal SignalT>
     constexpr Connection auto operator()(SignalT&& signal) && {
         using value_type = typename SignalT::value_type;
         using error_type = typename SignalT::error_type;

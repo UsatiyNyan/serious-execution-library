@@ -10,7 +10,7 @@
 namespace sl::exec {
 namespace detail {
 
-template <Signal SignalT>
+template <SomeSignal SignalT>
 struct [[nodiscard]] continue_on_signal {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
@@ -31,8 +31,8 @@ private:
 struct [[nodiscard]] continue_on {
     constexpr explicit continue_on(executor& executor) : executor_{ executor } {}
 
-    template <Signal SignalT>
-    constexpr Signal auto operator()(SignalT&& signal) && {
+    template <SomeSignal SignalT>
+    constexpr SomeSignal auto operator()(SignalT&& signal) && {
         return continue_on_signal<SignalT>{
             /* .signal = */ std::move(signal),
             /* .executor = */ executor_,

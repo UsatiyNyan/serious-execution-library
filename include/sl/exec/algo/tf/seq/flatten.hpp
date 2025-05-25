@@ -32,7 +32,7 @@ private:
     slot<ValueT, ErrorT>& slot_;
 };
 
-template <Signal SignalT, Signal SignalValueT = typename SignalT::value_type>
+template <SomeSignal SignalT, SomeSignal SignalValueT = typename SignalT::value_type>
     requires std::same_as<typename SignalT::error_type, typename SignalValueT::error_type>
 struct [[nodiscard]] flatten_signal {
     using value_type = typename SignalValueT::value_type;
@@ -57,8 +57,8 @@ private:
 };
 
 struct [[nodiscard]] flatten {
-    template <Signal SignalT>
-    constexpr auto operator()(SignalT&& signal) && {
+    template <SomeSignal SignalT>
+    constexpr SomeSignal auto operator()(SignalT&& signal) && {
         return flatten_signal<SignalT>{
             /* .signal = */ std::move(signal),
         };

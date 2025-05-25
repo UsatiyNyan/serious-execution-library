@@ -15,7 +15,7 @@
 namespace sl::exec {
 namespace detail {
 
-template <Signal SignalT>
+template <SomeSignal SignalT>
 struct [[nodiscard]] force_storage {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
@@ -84,7 +84,7 @@ private:
     std::atomic<std::uintptr_t> state_{ force_state_empty };
 };
 
-template <Signal SignalT>
+template <SomeSignal SignalT>
 struct force_connection {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
@@ -100,7 +100,7 @@ private:
     slot<value_type, error_type>& slot_;
 };
 
-template <Signal SignalT>
+template <SomeSignal SignalT>
 struct [[nodiscard]] force_signal : meta::unique {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
@@ -125,8 +125,8 @@ private:
 };
 
 struct [[nodiscard]] force {
-    template <Signal SignalT>
-    constexpr Signal auto operator()(SignalT&& signal) && {
+    template <SomeSignal SignalT>
+    constexpr SomeSignal auto operator()(SignalT&& signal) && {
         return force_signal<SignalT>{
             /* .signal = */ std::move(signal),
         };

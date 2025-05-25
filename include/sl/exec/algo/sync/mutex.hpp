@@ -14,8 +14,8 @@ namespace sl::exec {
 struct [[nodiscard]] mutex_lock {
     constexpr explicit mutex_lock(executor& executor) : executor_{ executor } {}
 
-    constexpr Signal auto unlock() { return start_on(executor_); }
-    constexpr Signal auto unlock_on(executor& executor) { return start_on(executor); }
+    constexpr Signal<meta::unit, meta::undefined> auto unlock() { return start_on(executor_); }
+    constexpr Signal<meta::unit, meta::undefined> auto unlock_on(executor& executor) { return start_on(executor); }
 
 private:
     executor& executor_;
@@ -24,11 +24,8 @@ private:
 struct [[nodiscard]] mutex {
     constexpr explicit mutex(executor& executor) : serial_executor_{ executor } {}
 
-    constexpr Signal auto lock() {
-        return value_as_signal(mutex_lock{
-                   /* .executor= */ serial_executor_.get_inner(),
-               })
-               | continue_on(serial_executor_);
+    constexpr Signal<mutex_lock, meta::undefined> auto lock() {
+        return value_as_signal(mutex_lock{ serial_executor_.get_inner() }) | continue_on(serial_executor_);
     }
 
 private:

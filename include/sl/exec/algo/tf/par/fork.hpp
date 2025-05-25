@@ -14,7 +14,7 @@ namespace detail {
 
 template <std::uint32_t N>
 struct [[nodiscard]] fork {
-    template <Signal SignalT>
+    template <SomeSignal SignalT>
     constexpr auto operator()(SignalT&& signal) && {
         using value_type = typename SignalT::value_type;
         using error_type = typename SignalT::error_type;
@@ -33,7 +33,7 @@ private:
 struct [[nodiscard]] fork_n {
     constexpr explicit fork_n(std::uint32_t count) : count_{ count } {}
 
-    template <Signal SignalT>
+    template <SomeSignal SignalT>
     constexpr auto operator()(SignalT&& signal) && {
         using value_type = typename SignalT::value_type;
         using error_type = typename SignalT::error_type;

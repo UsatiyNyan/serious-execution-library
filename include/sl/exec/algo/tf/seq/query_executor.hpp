@@ -9,7 +9,7 @@
 namespace sl::exec {
 namespace detail {
 
-template <Signal SignalT>
+template <SomeSignal SignalT>
 struct query_executor_signal {
     template <typename U>
     using with_executor = std::pair<executor&, U>;
@@ -57,8 +57,8 @@ private:
 };
 
 struct [[nodiscard]] query_executor {
-    template <Signal SignalT>
-    constexpr Signal auto operator()(SignalT&& signal) && {
+    template <SomeSignal SignalT>
+    constexpr SomeSignal auto operator()(SignalT&& signal) && {
         return query_executor_signal<SignalT>{ /* .signal = */ std::move(signal) };
     }
 };

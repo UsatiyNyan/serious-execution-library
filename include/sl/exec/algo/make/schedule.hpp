@@ -60,7 +60,7 @@ private:
 } // namespace detail
 
 template <typename FV>
-constexpr Signal auto schedule(executor& executor, FV&& functor) {
+constexpr SomeSignal auto schedule(executor& executor, FV&& functor) {
     using F = std::decay_t<FV>;
     return detail::schedule_signal<F>{
         /* .functor = */ std::forward<FV>(functor),

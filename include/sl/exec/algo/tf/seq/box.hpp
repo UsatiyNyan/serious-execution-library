@@ -23,7 +23,7 @@ struct box_storage_base {
 };
 
 template <
-    Signal SignalT,
+    SomeSignal SignalT,
     typename ValueT = typename SignalT::value_type,
     typename ErrorT = typename SignalT::error_type>
 struct box_storage final : box_storage_base<ValueT, ErrorT> {
@@ -67,7 +67,7 @@ struct [[nodiscard]] box_signal {
     using error_type = ErrorT;
 
 public:
-    template <Signal SignalT>
+    template <SomeSignal SignalT>
     constexpr explicit box_signal(SignalT&& signal)
         : storage_{ std::make_unique<detail::box_storage<SignalT>>(std::move(signal)) } {}
 
@@ -80,14 +80,14 @@ private:
     std::unique_ptr<detail::box_storage_base<value_type, error_type>> storage_;
 };
 
-template <Signal SignalT>
+template <SomeSignal SignalT>
 box_signal(SignalT&& signal) -> box_signal<typename SignalT::value_type, typename SignalT::error_type>;
 
 namespace detail {
 
 struct [[nodiscard]] box {
-    template <Signal SignalT>
-    constexpr auto operator()(SignalT&& signal) && {
+    template <SomeSignal SignalT>
+    constexpr SomeSignal auto operator()(SignalT&& signal) && {
         return box_signal{ std::move(signal) };
     }
 };

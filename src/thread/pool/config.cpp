@@ -10,10 +10,10 @@
 
 namespace sl::exec {
 
-tl::optional<thread_pool_config> thread_pool_config::hw_limit() {
+meta::maybe<thread_pool_config> thread_pool_config::hw_limit() {
     const std::uint32_t hwc = std::thread::hardware_concurrency();
     if (hwc == 0) {
-        return tl::nullopt;
+        return meta::null;
     }
     return thread_pool_config{ .tcount = hwc };
 }

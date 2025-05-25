@@ -51,7 +51,7 @@ private:
     executor& executor_;
 };
 
-template <Signal SignalT, typename F>
+template <SomeSignal SignalT, typename F>
 struct [[nodiscard]] map_signal {
     using value_type = std::invoke_result_t<F, typename SignalT::value_type>;
     using error_type = typename SignalT::error_type;
@@ -79,8 +79,8 @@ template <typename F>
 struct [[nodiscard]] map {
     F functor;
 
-    template <Signal SignalT>
-    constexpr auto operator()(SignalT&& signal) && {
+    template <SomeSignal SignalT>
+    constexpr SomeSignal auto operator()(SignalT&& signal) && {
         return map_signal<SignalT, F>{
             .signal = std::move(signal),
             .functor = std::move(functor),

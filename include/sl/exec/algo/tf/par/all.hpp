@@ -22,13 +22,13 @@
 namespace sl::exec {
 namespace detail {
 
-template <typename ValueT, typename ErrorT, Signal... SignalTs>
+template <typename ValueT, typename ErrorT, SomeSignal... SignalTs>
 struct all_connection : meta::immovable {
 private:
     template <
         std::size_t Idx,
-        typename Signal = meta::type::at_t<Idx, SignalTs...>,
-        typename ElementValueT = typename Signal::value_type>
+        typename SignalT = meta::type::at_t<Idx, SignalTs...>,
+        typename ElementValueT = typename SignalT::value_type>
     struct all_slot : slot<ElementValueT, ErrorT> {
         explicit all_slot(all_connection& self) : self_{ self } {}
 
@@ -133,7 +133,7 @@ private:
     slot<ValueT, ErrorT>& slot_;
 };
 
-template <typename ValueT, typename ErrorT, Signal... SignalTs>
+template <typename ValueT, typename ErrorT, SomeSignal... SignalTs>
 struct all_connection_box {
     all_connection_box(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
         : connection_{ std::make_unique<all_connection<ValueT, ErrorT, SignalTs...>>(
@@ -150,7 +150,7 @@ private:
     std::unique_ptr<all_connection<ValueT, ErrorT, SignalTs...>> connection_;
 };
 
-template <Signal... SignalTs>
+template <SomeSignal... SignalTs>
     requires meta::type::are_same_v<typename SignalTs::error_type...>
 struct [[nodiscard]] all_signal {
     using value_type = std::tuple<typename SignalTs::value_type...>;
@@ -175,7 +175,7 @@ private:
 } // namespace detail
 
 template <typename... SignalTV>
-constexpr Signal auto all(SignalTV&&... signals) {
+constexpr SomeSignal auto all(SignalTV&&... signals) {
     return detail::all_signal<std::decay_t<SignalTV>...>{
         /* .signals = */ std::forward<SignalTV>(signals)...,
     };

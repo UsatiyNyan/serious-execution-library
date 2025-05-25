@@ -2,6 +2,19 @@
 
 For serious programmers.
 
+# v1 API
+
+## model
+
+Concepts for creation of asynchrony:
+- `signal` produces
+- `slot` consumes
+- `connection` encompasses fixed state where calculation happens
+- `executor` describes how calculation is scheduled, low-level
+
+In client code you are expected to use:
+`Signal<value_type, error_type> auto` as a description of the source of asynchrony
+
 # WONTDO
 
 - [x] get_current_executor - `with_executor` should be enough, inline_executor case is ambiguous
@@ -9,6 +22,7 @@ For serious programmers.
 
 # TODO
 
+- [ ] events (atomics)
 - [ ] require noexcept from all slot-s
 - [ ] thread::pool::distributed
 - [ ] TESTS

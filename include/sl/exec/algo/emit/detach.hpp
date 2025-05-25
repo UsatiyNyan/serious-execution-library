@@ -10,7 +10,7 @@
 namespace sl::exec {
 namespace detail {
 
-template <Signal SignalT>
+template <SomeSignal SignalT>
 class detach_connection {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
@@ -36,7 +36,7 @@ private:
 };
 
 struct detach_emit {
-    template <Signal SignalT>
+    template <SomeSignal SignalT>
     constexpr void operator()(SignalT&& signal) && {
         auto& connection = *(new detach_connection<SignalT>{ std::move(signal) });
         std::move(connection).emit();

@@ -55,7 +55,7 @@ private:
     executor& executor_;
 };
 
-template <Signal SignalT, typename F, typename ResultT = std::invoke_result_t<F, typename SignalT::value_type>>
+template <SomeSignal SignalT, typename F, typename ResultT = std::invoke_result_t<F, typename SignalT::value_type>>
     requires std::same_as<typename SignalT::error_type, typename ResultT::error_type>
 struct [[nodiscard]] and_then_signal {
     using value_type = typename ResultT::value_type;
@@ -84,8 +84,8 @@ template <typename F>
 struct [[nodiscard]] and_then {
     F functor;
 
-    template <Signal SignalT>
-    constexpr auto operator()(SignalT&& signal) && {
+    template <SomeSignal SignalT>
+    constexpr SomeSignal auto operator()(SignalT&& signal) && {
         return and_then_signal<SignalT, F>{
             .signal = std::move(signal),
             .functor = std::move(functor),

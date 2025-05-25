@@ -10,7 +10,7 @@
 
 namespace sl::exec {
 
-template <Signal SignalT, typename ContinuationTV>
+template <SomeSignal SignalT, typename ContinuationTV>
 constexpr auto operator|(SignalT&& signal, ContinuationTV&& continuation) {
     return std::forward<ContinuationTV>(continuation)(std::move(signal));
 }

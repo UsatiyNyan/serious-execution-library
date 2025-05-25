@@ -70,7 +70,9 @@ private:
 
 template <typename T>
 struct as_signal<async<T>> {
-    constexpr static Signal auto call(async<T> async) { return async_signal<T>{ /* .async = */ std::move(async) }; }
+    constexpr static Signal<T, std::exception_ptr> auto call(async<T> async) {
+        return async_signal<T>{ /* .async = */ std::move(async) };
+    }
 };
 
 } // namespace sl::exec::detail

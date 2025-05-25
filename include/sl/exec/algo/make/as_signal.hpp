@@ -15,7 +15,7 @@ struct as_signal;
 } // namespace detail
 
 template <typename TV>
-constexpr Signal auto as_signal(TV&& x) {
+constexpr SomeSignal auto as_signal(TV&& x) {
     using T = std::decay_t<TV>;
     return detail::as_signal<T>::call(std::forward<TV>(x));
 }

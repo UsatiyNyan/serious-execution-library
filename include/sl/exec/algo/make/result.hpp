@@ -58,7 +58,7 @@ private:
 template <typename ValueT, typename ErrorT>
 struct as_signal<meta::result<ValueT, ErrorT>> {
     template <typename ResultTV>
-    constexpr static Signal auto call(ResultTV&& result) {
+    constexpr static Signal<ValueT, ErrorT> auto call(ResultTV&& result) {
         return result_signal<ValueT, ErrorT>{ /* .result = */ std::forward<ResultTV>(result) };
     }
 };
@@ -66,12 +66,12 @@ struct as_signal<meta::result<ValueT, ErrorT>> {
 } // namespace detail
 
 template <typename ValueTV>
-constexpr Signal auto value_as_signal(ValueTV&& value) {
+constexpr SomeSignal auto value_as_signal(ValueTV&& value) {
     return as_signal(meta::ok(std::forward<ValueTV>(value)));
 }
 
 template <typename ErrorTV>
-constexpr Signal auto error_as_signal(ErrorTV&& error) {
+constexpr SomeSignal auto error_as_signal(ErrorTV&& error) {
     using ErrorT = std::decay_t<ErrorTV>;
     return as_signal(meta::result<meta::unit, ErrorT>{ meta::err(std::forward<ErrorTV>(error)) });
 }

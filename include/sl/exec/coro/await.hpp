@@ -53,7 +53,7 @@ private:
     executor& executor_;
 };
 
-template <Signal SignalT>
+template <SomeSignal SignalT>
 struct signal_awaiter {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
@@ -92,7 +92,7 @@ private:
 
 } // namespace detail
 
-template <Signal SignalT>
+template <SomeSignal SignalT>
 auto operator co_await(SignalT&& signal) {
     return detail::signal_awaiter<SignalT>{ std::move(signal) };
 }

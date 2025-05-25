@@ -145,7 +145,7 @@ private:
 };
 
 template <
-    Signal SignalT,
+    SomeSignal SignalT,
     typename ValueT = typename SignalT::value_type,
     typename ErrorT = typename SignalT::error_type>
 struct [[nodiscard]] share_storage final : share_storage_base<ValueT, ErrorT> {
@@ -216,7 +216,7 @@ private:
 template <typename ValueT, typename ErrorT>
 struct [[nodiscard]] share_box : meta::finalizer<share_box<ValueT, ErrorT>> {
 
-    template <Signal SignalT>
+    template <SomeSignal SignalT>
     constexpr explicit share_box(SignalT&& signal)
         : meta::finalizer<share_box>{ [](share_box& self) { self.storage_ptr_->decref(); } },
           storage_ptr_{ new detail::share_storage<SignalT>{
@@ -224,19 +224,21 @@ struct [[nodiscard]] share_box : meta::finalizer<share_box<ValueT, ErrorT>> {
               /* .refcount = */ 1u,
           } } {}
 
-    constexpr Signal auto get_signal() & { return detail::share_signal<ValueT, ErrorT>{ storage_ptr_ }; }
+    constexpr Signal<ValueT, ErrorT> auto get_signal() & {
+        return detail::share_signal<ValueT, ErrorT>{ storage_ptr_ };
+    }
 
 private:
     detail::share_storage_base<ValueT, ErrorT>* storage_ptr_;
 };
 
-template <Signal SignalT>
+template <SomeSignal SignalT>
 share_box(SignalT&&) -> share_box<typename SignalT::value_type, typename SignalT::error_type>;
 
 namespace detail {
 
 struct [[nodiscard]] share_emit {
-    template <Signal SignalT>
+    template <SomeSignal SignalT>
     constexpr auto operator()(SignalT&& signal) && {
         return exec::share_box{ std::move(signal) };
     }
