@@ -27,6 +27,28 @@ as a description of the source of asynchrony.
 - `sync` - thread-synchronization primitives
 - `pool/monolithic` is a simple "queue under mutex" implementation of `executor`
 
+## coro
+
+- `coroutine` basic, needs manual `resume` (can be composed, lazily constructed, eagerly awaited)
+- `generator` basic, needs manual `next`
+- `async` is a coroutine that supports exec integration, `async<void>` can be scheduled in `executor`, can not be manually resumed
+- `async_gen` is a generator that supports `co_await`, when awaited yields next value
+- `await` gives ability to `co_await Signal`
+- `as_signal` transforms `async<T>` into a producer (source of asynchrony)
+
+> If you want to include a coroutine into pipeline of signals, 
+there's a way to combine `as_signal` and `flatten` in order to achieve that:
+
+```cpp
+async<...> coro(T x);
+
+... 
+| and_then([&](T x) { return as_signal(coro(x)) | continue_on(some_executor); }) 
+| flatten() 
+| ...
+```
+
+
 # WONTDO
 
 - [x] get_current_executor - `with_executor` should be enough, inline_executor case is ambiguous

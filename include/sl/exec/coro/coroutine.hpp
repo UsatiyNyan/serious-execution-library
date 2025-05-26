@@ -34,7 +34,7 @@ public:
 
     coroutine(coroutine&& other) noexcept : handle_{ std::exchange(other.handle_, {}) } {}
 
-    void start() { handle_.resume(); }
+    void resume() { handle_.resume(); }
 
     [[nodiscard]] auto result() && {
         ASSERT(handle_.done());

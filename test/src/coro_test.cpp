@@ -17,7 +17,7 @@ TEST(coro, coroutine) {
     constexpr auto calculate_meaning_of_life = [] -> coroutine<int> { co_return 42; };
     coroutine<int> meaning_of_life = calculate_meaning_of_life();
     std::cout << "calculating meaning of life brrr..." << std::endl;
-    meaning_of_life.start();
+    meaning_of_life.resume();
     std::cout << "meaning of life calculated" << std::endl;
     const int meaning_of_life_result = std::move(meaning_of_life).result_or_throw();
     std::cout << "result: " << meaning_of_life_result << std::endl;
@@ -70,7 +70,7 @@ coroutine<std::vector<std::string>> live_productive_day() {
 
 TEST(coro, nestingTask) {
     auto productive_day = live_productive_day();
-    productive_day.start();
+    productive_day.resume();
     const auto productive_day_result = std::move(productive_day).result_or_throw();
     ASSERT_EQ(
         productive_day_result,
@@ -96,7 +96,7 @@ TEST(coro, coroutinesCallStack) {
         co_return sum;
     };
     auto iter_synchronous_coroutine = iter_synchronous();
-    iter_synchronous_coroutine.start();
+    iter_synchronous_coroutine.resume();
     const int result = std::move(iter_synchronous_coroutine).result_or_throw();
     ASSERT_EQ(result, iterations);
 }
