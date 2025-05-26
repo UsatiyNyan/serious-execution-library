@@ -7,6 +7,7 @@
 #include "sl/exec/algo/emit/force.hpp"
 #include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/model/concept.hpp"
+#include "sl/exec/model/syntax.hpp"
 
 #include <sl/meta/traits/unique.hpp>
 
@@ -73,21 +74,20 @@ private:
     bool done_ = false;
 };
 
-template <typename ValueT, typename ErrorT>
+template <typename ValueT, typename ErrorT, template <typename> typename Atomic = detail::atomic>
 struct contract {
-    using future_type = detail::force_signal<detail::promise_signal<ValueT, ErrorT>>;
+    using future_type = detail::force_signal<detail::promise_signal<ValueT, ErrorT>, Atomic>;
     using promise_type = promise<ValueT, ErrorT>;
 
     future_type future;
     promise_type promise;
 };
 
-template <typename ValueT, typename ErrorT>
-contract<ValueT, ErrorT> make_contract() {
+template <typename ValueT, typename ErrorT, template <typename> typename Atomic = detail::atomic>
+contract<ValueT, ErrorT, Atomic> make_contract() {
     slot<ValueT, ErrorT>* promise_slot = nullptr;
-    detail::force_signal<detail::promise_signal<ValueT, ErrorT>> signal =
-        force()(detail::promise_signal<ValueT, ErrorT>{ &promise_slot });
-    return contract<ValueT, ErrorT>{
+    auto signal = detail::promise_signal<ValueT, ErrorT>{ &promise_slot } | force();
+    return contract<ValueT, ErrorT, Atomic>{
         .future = std::move(signal),
         .promise{ promise_slot },
     };

@@ -14,9 +14,9 @@ struct mutex_event {
     void wait();
 
 private:
-    bool is_set_ = false;
     std::mutex m_{};
     std::condition_variable cv_{};
+    bool is_set_ = false;
 };
 
 } // namespace sl::exec

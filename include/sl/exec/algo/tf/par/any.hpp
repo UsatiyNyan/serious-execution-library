@@ -8,6 +8,7 @@
 #include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/model/concept.hpp"
+#include "sl/exec/thread/detail/atomic.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
 
 #include <sl/meta/func/lazy_eval.hpp>
@@ -16,12 +17,10 @@
 #include <sl/meta/tuple/for_each.hpp>
 #include <sl/meta/type/pack.hpp>
 
-#include <atomic>
-
 namespace sl::exec {
 namespace detail {
 
-template <typename ValueT, typename ErrorT, SomeSignal... SignalTs>
+template <typename ValueT, typename ErrorT, template <typename> typename Atomic, SomeSignal... SignalTs>
 struct any_connection : meta::immovable {
 private:
     struct any_slot : slot<ValueT, ErrorT> {
@@ -102,15 +101,15 @@ private:
 
 private:
     std::tuple<subscribe_connection<SignalTs, any_slot>...> connections_;
-    alignas(hardware_destructive_interference_size) std::atomic<std::uint32_t> counter_{ 0 };
-    alignas(hardware_destructive_interference_size) std::atomic<bool> done_{ false };
+    alignas(hardware_destructive_interference_size) Atomic<std::uint32_t> counter_{ 0 };
+    alignas(hardware_destructive_interference_size) Atomic<bool> done_{ false };
     slot<ValueT, ErrorT>& slot_;
 };
 
-template <typename ValueT, typename ErrorT, SomeSignal... SignalTs>
+template <typename ValueT, typename ErrorT, template <typename> typename Atomic, SomeSignal... SignalTs>
 struct any_connection_box {
     any_connection_box(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
-        : connection_{ std::make_unique<any_connection<ValueT, ErrorT, SignalTs...>>(
+        : connection_{ std::make_unique<any_connection<ValueT, ErrorT, Atomic, SignalTs...>>(
               /* .signals = */ std::move(signals),
               /* .slot = */ slot
           ) } {}
@@ -121,10 +120,10 @@ struct any_connection_box {
     }
 
 private:
-    std::unique_ptr<any_connection<ValueT, ErrorT, SignalTs...>> connection_;
+    std::unique_ptr<any_connection<ValueT, ErrorT, Atomic, SignalTs...>> connection_;
 };
 
-template <SomeSignal... SignalTs>
+template <template <typename> typename Atomic, SomeSignal... SignalTs>
     requires meta::type::are_same_v<typename SignalTs::value_type...>
              && meta::type::are_same_v<typename SignalTs::error_type...>
 struct [[nodiscard]] any_signal {
@@ -135,7 +134,7 @@ struct [[nodiscard]] any_signal {
     explicit any_signal(SignalTV&&... signals) : signals_{ std::forward<SignalTV>(signals)... } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
-        return any_connection_box<value_type, error_type, SignalTs...>{
+        return any_connection_box<value_type, error_type, Atomic, SignalTs...>{
             /* .signals = */ std::move(signals_),
             /* .slot = */ slot,
         };
@@ -149,11 +148,16 @@ private:
 
 } // namespace detail
 
-template <typename... SignalTV>
-constexpr SomeSignal auto any(SignalTV&&... signals) {
-    return detail::any_signal<std::decay_t<SignalTV>...>{
+template <template <typename> typename Atomic, SomeSignal... SignalTV>
+constexpr SomeSignal auto any_(SignalTV&&... signals) {
+    return detail::any_signal<Atomic, std::decay_t<SignalTV>...>{
         /* .signals = */ std::forward<SignalTV>(signals)...,
     };
+}
+
+template <SomeSignal... SignalTV>
+constexpr SomeSignal auto any(SignalTV&&... signals) {
+    return any_<detail::atomic>(std::forward<SignalTV>(signals)...);
 }
 
 } // namespace sl::exec

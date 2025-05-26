@@ -9,6 +9,8 @@
 #include "sl/exec/algo/sched/start_on.hpp"
 #include "sl/exec/algo/sync/serial.hpp"
 
+#include "sl/exec/thread/detail/atomic.hpp"
+
 namespace sl::exec {
 
 struct [[nodiscard]] mutex_lock {
@@ -21,6 +23,7 @@ private:
     executor& executor_;
 };
 
+template <template <typename> typename Atomic = detail::atomic>
 struct [[nodiscard]] mutex {
     constexpr explicit mutex(executor& executor) : serial_executor_{ executor } {}
 
@@ -29,7 +32,7 @@ struct [[nodiscard]] mutex {
     }
 
 private:
-    serial_executor serial_executor_;
+    serial_executor<Atomic> serial_executor_;
 };
 
 } // namespace sl::exec

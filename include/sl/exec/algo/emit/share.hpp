@@ -9,22 +9,23 @@
 
 #pragma once
 
-#include "sl/exec/algo/emit/subscribe.hpp"
-#include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/model/syntax.hpp"
+
+#include "sl/exec/algo/emit/subscribe.hpp"
+#include "sl/exec/algo/sched/inline.hpp"
+
+#include "sl/exec/thread/detail/atomic.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
 
 #include <sl/meta/intrusive/algorithm.hpp>
 #include <sl/meta/lifetime/finalizer.hpp>
 #include <sl/meta/monad/maybe.hpp>
 
-#include <atomic>
-
 namespace sl::exec {
 namespace detail {
 
-template <typename ValueT, typename ErrorT>
+template <typename ValueT, typename ErrorT, template <typename> typename Atomic>
 struct [[nodiscard]] share_storage_base {
     using value_type = ValueT;
     using error_type = ErrorT;
@@ -140,16 +141,18 @@ private:
 
 private:
     meta::maybe<result_type> maybe_result_{};
-    alignas(hardware_destructive_interference_size) std::atomic<std::uint32_t> refcount_{ 0 };
-    alignas(hardware_destructive_interference_size) std::atomic<std::uintptr_t> state_{ share_state_empty };
+    alignas(hardware_destructive_interference_size) Atomic<std::uint32_t> refcount_{ 0 };
+    alignas(hardware_destructive_interference_size) Atomic<std::uintptr_t> state_{ share_state_empty };
 };
 
 template <
     SomeSignal SignalT,
+    template <typename>
+    typename Atomic,
     typename ValueT = typename SignalT::value_type,
     typename ErrorT = typename SignalT::error_type>
-struct [[nodiscard]] share_storage final : share_storage_base<ValueT, ErrorT> {
-    using base_type = share_storage_base<ValueT, ErrorT>;
+struct [[nodiscard]] share_storage final : share_storage_base<ValueT, ErrorT, Atomic> {
+    using base_type = share_storage_base<ValueT, ErrorT, Atomic>;
     using slot_type = typename base_type::share_slot;
 
 public:
@@ -164,11 +167,14 @@ private:
 };
 
 
-template <typename ValueT, typename ErrorT>
+template <typename ValueT, typename ErrorT, template <typename> typename Atomic>
 struct [[nodiscard]] share_connection : meta::immovable {
-    constexpr share_connection(detail::share_storage_base<ValueT, ErrorT>* storage_ptr, slot<ValueT, ErrorT>& slot)
+    constexpr share_connection(
+        detail::share_storage_base<ValueT, ErrorT, Atomic>* storage_ptr,
+        slot<ValueT, ErrorT>& slot
+    )
         : slot_node_{ slot }, storage_ptr_{ storage_ptr } {}
-    ~share_connection() { detail::share_storage_base<ValueT, ErrorT>::try_decref(storage_ptr_); }
+    ~share_connection() { detail::share_storage_base<ValueT, ErrorT, Atomic>::try_decref(storage_ptr_); }
 
     void emit() && {
         auto* storage_ptr = std::exchange(storage_ptr_, nullptr);
@@ -178,18 +184,18 @@ struct [[nodiscard]] share_connection : meta::immovable {
 
 private:
     exec::slot_node<ValueT, ErrorT> slot_node_;
-    detail::share_storage_base<ValueT, ErrorT>* storage_ptr_;
+    detail::share_storage_base<ValueT, ErrorT, Atomic>* storage_ptr_;
 };
 
-template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] share_signal : meta::finalizer<share_signal<ValueT, ErrorT>> {
+template <typename ValueT, typename ErrorT, template <typename> typename Atomic>
+struct [[nodiscard]] share_signal : meta::finalizer<share_signal<ValueT, ErrorT, Atomic>> {
     using value_type = ValueT;
     using error_type = ErrorT;
 
 public:
-    constexpr explicit share_signal(detail::share_storage_base<value_type, error_type>* storage_ptr)
+    constexpr explicit share_signal(detail::share_storage_base<value_type, error_type, Atomic>* storage_ptr)
         : meta::finalizer<share_signal>{ [](share_signal& self) {
-              detail::share_storage_base<value_type, error_type>::try_decref(self.storage_ptr_);
+              detail::share_storage_base<value_type, error_type, Atomic>::try_decref(self.storage_ptr_);
           } },
           storage_ptr_{ storage_ptr } {
         [[maybe_unused]] const std::uint32_t refcount = storage_ptr_->incref();
@@ -208,45 +214,45 @@ public:
     executor& get_executor() & { return exec::inline_executor(); }
 
 private:
-    detail::share_storage_base<value_type, error_type>* storage_ptr_;
+    detail::share_storage_base<value_type, error_type, Atomic>* storage_ptr_;
 };
 
 } // namespace detail
 
-template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] share_box : meta::finalizer<share_box<ValueT, ErrorT>> {
+template <typename ValueT, typename ErrorT, template <typename> typename Atomic = detail::atomic>
+struct [[nodiscard]] share_box : meta::finalizer<share_box<ValueT, ErrorT, Atomic>> {
 
     template <SomeSignal SignalT>
     constexpr explicit share_box(SignalT&& signal)
         : meta::finalizer<share_box>{ [](share_box& self) { self.storage_ptr_->decref(); } },
-          storage_ptr_{ new detail::share_storage<SignalT>{
+          storage_ptr_{ new detail::share_storage<SignalT, Atomic>{
               /* .signal = */ std::move(signal),
               /* .refcount = */ 1u,
           } } {}
 
     constexpr Signal<ValueT, ErrorT> auto get_signal() & {
-        return detail::share_signal<ValueT, ErrorT>{ storage_ptr_ };
+        return detail::share_signal<ValueT, ErrorT, Atomic>{ storage_ptr_ };
     }
 
 private:
-    detail::share_storage_base<ValueT, ErrorT>* storage_ptr_;
+    detail::share_storage_base<ValueT, ErrorT, Atomic>* storage_ptr_;
 };
-
-template <SomeSignal SignalT>
-share_box(SignalT&&) -> share_box<typename SignalT::value_type, typename SignalT::error_type>;
 
 namespace detail {
 
+template <template <typename> typename Atomic>
 struct [[nodiscard]] share_emit {
     template <SomeSignal SignalT>
     constexpr auto operator()(SignalT&& signal) && {
-        return exec::share_box{ std::move(signal) };
+        return exec::share_box<typename SignalT::value_type, typename SignalT::error_type, Atomic>{ std::move(signal) };
     }
 };
 
 } // namespace detail
 
-
-constexpr auto share() { return detail::share_emit{}; }
+template <template <typename> typename Atomic = detail::atomic>
+constexpr auto share() {
+    return detail::share_emit<Atomic>{};
+}
 
 } // namespace sl::exec

@@ -6,16 +6,15 @@
 
 #include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/model/concept.hpp"
+#include "sl/exec/thread/detail/atomic.hpp"
 
 #include <sl/meta/lifetime/defer.hpp>
 #include <sl/meta/monad/maybe.hpp>
 
-#include <atomic>
-
 namespace sl::exec {
 namespace detail {
 
-template <SomeSignal SignalT>
+template <SomeSignal SignalT, template <typename> typename Atomic>
 struct [[nodiscard]] force_storage {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
@@ -81,32 +80,32 @@ public:
 private:
     subscribe_connection<SignalT, force_slot> connection_;
     meta::maybe<result_type> maybe_result_;
-    std::atomic<std::uintptr_t> state_{ force_state_empty };
+    Atomic<std::uintptr_t> state_{ force_state_empty };
 };
 
-template <SomeSignal SignalT>
+template <SomeSignal SignalT, template <typename> typename Atomic>
 struct force_connection {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
 public:
-    force_connection(force_storage<SignalT>& storage, slot<value_type, error_type>& slot)
+    force_connection(force_storage<SignalT, Atomic>& storage, slot<value_type, error_type>& slot)
         : storage_{ storage }, slot_{ slot } {}
 
     void emit() && { storage_.set_slot(slot_); }
 
 private:
-    force_storage<SignalT>& storage_;
+    force_storage<SignalT, Atomic>& storage_;
     slot<value_type, error_type>& slot_;
 };
 
-template <SomeSignal SignalT>
+template <SomeSignal SignalT, template <typename> typename Atomic>
 struct [[nodiscard]] force_signal : meta::unique {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
     explicit force_signal(SignalT&& signal)
-        : executor_{ &signal.get_executor() }, storage_{ new force_storage{ std::move(signal) } } {}
+        : executor_{ &signal.get_executor() }, storage_{ new force_storage<SignalT, Atomic>{ std::move(signal) } } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
         auto* storage_ptr = std::exchange(storage_, nullptr);
@@ -121,13 +120,14 @@ struct [[nodiscard]] force_signal : meta::unique {
 
 private:
     executor* executor_;
-    force_storage<SignalT>* storage_;
+    force_storage<SignalT, Atomic>* storage_;
 };
 
+template <template <typename> typename Atomic>
 struct [[nodiscard]] force {
     template <SomeSignal SignalT>
     constexpr SomeSignal auto operator()(SignalT&& signal) && {
-        return force_signal<SignalT>{
+        return force_signal<SignalT, Atomic>{
             /* .signal = */ std::move(signal),
         };
     }
@@ -135,6 +135,9 @@ struct [[nodiscard]] force {
 
 } // namespace detail
 
-constexpr auto force() { return detail::force{}; }
+template <template <typename> typename Atomic = detail::atomic>
+constexpr auto force() {
+    return detail::force<Atomic>{};
+}
 
 } // namespace sl::exec

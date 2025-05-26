@@ -20,14 +20,10 @@ project(
 
 add_library(${PROJECT_NAME} STATIC
     src/algo/sched/manual.cpp
-    src/algo/sync/serial.cpp
     src/coro/async.cpp
     src/thread/event/nowait.cpp
-    src/thread/event/atomic.cpp
     src/thread/event/mutex.cpp
-    src/thread/sync/wait_group.cpp
     src/thread/pool/config.cpp
-    src/thread/pool/monolithic.cpp
     )
 
 add_library(sl::exec ALIAS ${PROJECT_NAME})

@@ -4,7 +4,11 @@
 
 #pragma once
 
+#ifdef __cpp_lib_hardware_interference_size
 #include <new>
+#else
+#include <cstdint>
+#endif
 
 namespace sl::exec::detail {
 

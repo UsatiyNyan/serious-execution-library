@@ -12,8 +12,20 @@ Concepts for creation of asynchrony:
 - `connection` encompasses fixed state where calculation happens
 - `executor` describes how calculation is scheduled, low-level
 
-In client code you are expected to use:
-`Signal<value_type, error_type> auto` as a description of the source of asynchrony
+In client code you are expected to use 
+
+```cpp
+Signal<value_type, error_type> auto f();
+```
+
+as a description of the source of asynchrony.
+
+## thread
+
+- `detail/atomic` is an "injectable" atomic for fuzz testing and platform-specific configurations
+- `event`-s are different types of sync primitives for one-shot calculations (use `default_event` if confused)
+- `sync` - thread-synchronization primitives
+- `pool/monolithic` is a simple "queue under mutex" implementation of `executor`
 
 # WONTDO
 
@@ -22,9 +34,7 @@ In client code you are expected to use:
 
 # TODO
 
-- [ ] events (atomics)
 - [ ] require noexcept from all slot-s
 - [ ] thread::pool::distributed
 - [ ] TESTS
-- [ ] pseudo-atomics, parametrize emits and executors with atomic
 

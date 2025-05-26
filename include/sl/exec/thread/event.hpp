@@ -11,6 +11,6 @@
 namespace sl::exec {
 
 // TODO: add other OS-es
-using default_event = atomic_event;
+using default_event = atomic_event<detail::atomic>;
 
 } // namespace sl::exec

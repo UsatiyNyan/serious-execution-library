@@ -12,7 +12,7 @@
 namespace sl::exec {
 namespace detail {
 
-template <std::uint32_t N>
+template <std::uint32_t N, template <typename> typename Atomic>
 struct [[nodiscard]] fork {
     template <SomeSignal SignalT>
     constexpr auto operator()(SignalT&& signal) && {
@@ -26,10 +26,12 @@ private:
     template <typename ValueT, typename ErrorT, std::uint32_t... Idxs>
     static constexpr auto
         make_signals(share_box<ValueT, ErrorT>& shared, std::integer_sequence<std::uint32_t, Idxs...>) {
-        return std::array<detail::share_signal<ValueT, ErrorT>, N>{ ((void)Idxs, shared.get_signal())... };
+        using signal_type = detail::share_signal<ValueT, ErrorT, Atomic>;
+        return std::array<signal_type, N>{ ((void)Idxs, shared.get_signal())... };
     }
 };
 
+template <template <typename> typename Atomic>
 struct [[nodiscard]] fork_n {
     constexpr explicit fork_n(std::uint32_t count) : count_{ count } {}
 
@@ -39,7 +41,7 @@ struct [[nodiscard]] fork_n {
         using error_type = typename SignalT::error_type;
         share_box<value_type, error_type> shared{ std::move(signal) };
 
-        std::vector<detail::share_signal<value_type, error_type>> signals;
+        std::vector<detail::share_signal<value_type, error_type, Atomic>> signals;
         signals.reserve(count_);
         for (std::uint32_t i = 0; i < count_; ++i) {
             signals.emplace_back(shared.get_signal());
@@ -53,11 +55,14 @@ private:
 
 } // namespace detail
 
-template <std::uint32_t N = 2>
+template <std::uint32_t N = 2, template <typename> typename Atomic = detail::atomic>
 constexpr auto fork() {
-    return detail::fork<N>{};
+    return detail::fork<N, Atomic>{};
 }
 
-constexpr auto fork(std::uint32_t n) { return detail::fork_n{ n }; }
+template <template <typename> typename Atomic = detail::atomic>
+constexpr auto fork(std::uint32_t n) {
+    return detail::fork_n<Atomic>{ n };
+}
 
 } // namespace sl::exec

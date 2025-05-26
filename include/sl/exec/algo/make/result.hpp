@@ -6,7 +6,6 @@
 
 #include "sl/exec/algo/make/as_signal.hpp"
 #include "sl/exec/algo/sched/inline.hpp"
-#include "sl/exec/model/concept.hpp"
 
 #include <sl/meta/monad/result.hpp>
 

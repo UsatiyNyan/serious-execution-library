@@ -17,7 +17,7 @@ TEST(thread, monolithicThreadPool) {
             background_executor,
             [] -> meta::result<std::thread::id, meta::undefined> { return std::this_thread::get_id(); }
         )
-        | get<atomic_event>();
+        | get<default_event>();
     ASSERT_NE(*maybe_result, std::this_thread::get_id());
 }
 
