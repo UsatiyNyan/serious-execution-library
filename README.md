@@ -27,6 +27,34 @@ as a description of the source of asynchrony.
 - `sync` - thread-synchronization primitives
 - `pool/monolithic` is a simple "queue under mutex" implementation of `executor`
 
+## algo
+
+- `make` - the beginning of execution pipeline:
+  - `result` - starts asynchrony from *just* a value, the simplest entrance into `signal` monad
+  - `contract` - classic pair of `future ~ eager signal` and `promise ~ slot`, is one-shot
+  - `pipe` - SPSC pseudo-blocking channel, restrictive, but fast for 1-to-1 communication
+  - `channel` - MPMC non-blocking channel, similar to Golang's `chan` but is lock-free
+- `sched` - interactions with `executor`
+  - `start_on`, `continue_on` - scheduling signals
+  - `inline` - immediate executor
+  - `manual` - manual executor, allows to replicate races in a single thread, mainly used in tests
+- `sync` - execution strategies for synchronization
+  - `serial` - serial executor, wraps any other executor into single-threaded pipeline
+  - `mutex` - wrapper around serial executor, has better unlock strategy (w/o thundering herd)
+- `tf/seq` - sequential transforms of `signal`-s
+  - `and_then`, `or_else`, `map`, `map_error`, `flatten` - classic monadic operations
+  - `box` - type erasure, would put `signal` and `connection` state on heap
+  - `query_executor` - populate pipeline context with previous `signal-s` executor, may differ from actual executor at the point of `emit`
+- `tf/par` - enabling parallel execution and races
+  - `all`, `any` - classic monadic operations, support cancellation of abandoned `signals`
+  - `fork` - replicate signal for multiple pipelines
+- `emit` - evaluation points, where `connection` is formed or calculation is eagerly executed
+  - `get` - explicitly blocks until `signal` is evaluated, should be used in synchronous code
+  - `detach` - begins evaluation, but does not return value
+  - `subscribe` - manual `connection` storage, needs to be manually `emit`-ted
+  - `force` - is not a termination point, but begins execution eagerly
+  - `share` - is a termination point, can share it's result, is one-shot
+
 ## coro
 
 - `coroutine` basic, needs manual `resume` (can be composed, lazily constructed, eagerly awaited)
@@ -36,8 +64,8 @@ as a description of the source of asynchrony.
 - `await` gives ability to `co_await Signal`
 - `as_signal` transforms `async<T>` into a producer (source of asynchrony)
 
-> If you want to include a coroutine into pipeline of signals, 
-there's a way to combine `as_signal` and `flatten` in order to achieve that:
+> _NOTE_: If you want to include a coroutine into pipeline of signals, 
+there's a way to combine `as_signal`, `continue_on` and `flatten` in order to achieve that:
 
 ```cpp
 async<...> coro(T x);
@@ -52,11 +80,12 @@ async<...> coro(T x);
 # WONTDO
 
 - [x] get_current_executor - `with_executor` should be enough, inline_executor case is ambiguous
-- [x] repeatable_connection - `(args) -> signal` is basically a repeatable connection
+- [x] repeatable connection - hard to manage memory, signals should always be one-shot
 
 # TODO
 
-- [ ] require noexcept from all slot-s
+- [ ] bottom-up cancellation
 - [ ] thread::pool::distributed
 - [ ] TESTS
+- [ ] require noexcept from all slot-s
 
