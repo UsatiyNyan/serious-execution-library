@@ -27,6 +27,35 @@ as a description of the source of asynchrony.
 - `sync` - thread-synchronization primitives
 - `pool/monolithic` is a simple "queue under mutex" implementation of `executor`
 
+## algo
+
+- `make` - the beginning of execution pipeline
+- `sched` - interactions with `executor`
+- `sync` - execution strategies for synchronization
+- `tf/seq` - sequential transforms of `signal`-s
+- `tf/par` - enabling parallel execution and races
+- `channel` - is a collection of "repeatable" asynchrony, all of them may call `set_value|error` many times:
+  - `pipe` - SPSC
+  - `broadcast` - SPMC
+  - `sink` - MPSC
+  - `topic` - MPMC
+- `emit` - evaluation points, where `connection` is formed or calculation is eagerly executed
+
+> _NOTE_: Even though most of the design is built around "one-shot" connections (e.g. `get`, `detach`, `co_await`, `all`, `any`),
+repeatable connections are still possible. Thanks to `subscribe_connection`, state itself may exist longer than just one `set_value|error`, e.g.:
+
+```cpp
+auto [signal, slot] = make_pipe();
+const auto connection = std::move(signal) 
+    | map([](std::string_view x) { std::cout << x; }) 
+    | subscribe();
+
+// both should work
+slot.set_value("Hello, ");
+slot.set_value("World!\n");
+// output should be "Hello, World!\n"
+```
+
 ## coro
 
 - `coroutine` basic, needs manual `resume` (can be composed, lazily constructed, eagerly awaited)
@@ -36,8 +65,8 @@ as a description of the source of asynchrony.
 - `await` gives ability to `co_await Signal`
 - `as_signal` transforms `async<T>` into a producer (source of asynchrony)
 
-> If you want to include a coroutine into pipeline of signals, 
-there's a way to combine `as_signal` and `flatten` in order to achieve that:
+> _NOTE_: If you want to include a coroutine into pipeline of signals, 
+there's a way to combine `as_signal`, `continue_on` and `flatten` in order to achieve that:
 
 ```cpp
 async<...> coro(T x);
@@ -52,7 +81,6 @@ async<...> coro(T x);
 # WONTDO
 
 - [x] get_current_executor - `with_executor` should be enough, inline_executor case is ambiguous
-- [x] repeatable_connection - `(args) -> signal` is basically a repeatable connection
 
 # TODO
 
