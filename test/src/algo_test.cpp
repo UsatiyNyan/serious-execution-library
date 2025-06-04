@@ -334,4 +334,79 @@ TEST(algo, box) {
     EXPECT_EQ(maybe_result.value(), 69);
 }
 
+TEST(algo, pipeSimple) {
+    auto [in, out] = make_pipe<meta::unit, meta::undefined>();
+
+    std::size_t counter = 0;
+    const auto increment = [&](meta::unit) {
+        ++counter;
+        return meta::unit{};
+    };
+
+    in.send(meta::unit{}) | detach();
+    // would ASSERT with "only single producer"
+    // in.send(meta::unit{}) | detach();
+
+    out.receive() | map(increment) | get<nowait_event>();
+    ASSERT_EQ(counter, 1);
+
+    out.receive() | map(increment) | detach();
+    // would ASSERT with "only single consumer"
+    // out.receive() | map(increment) | detach();
+
+    EXPECT_EQ(counter, 1);
+
+    for (int i = 2; i < 10; ++i) {
+        in.send(meta::unit{}) | get<nowait_event>();
+        EXPECT_EQ(counter, i);
+
+        out.receive() | map(increment) | detach();
+    }
+
+    std::move(in).close() | get<nowait_event>();
+    EXPECT_EQ(counter, 9);
+}
+
+TEST(algo, pipeExecutor) {
+    auto [in, out] = make_pipe<meta::unit, meta::undefined>();
+
+    std::size_t counter = 0;
+    const auto increment = [&](meta::unit) {
+        ++counter;
+        return meta::unit{};
+    };
+
+    manual_executor an_executor;
+    const auto increment_on_executor = [&](auto&& signal) {
+        return std::move(signal) | continue_on(an_executor) | map(increment);
+    };
+
+    for (int i = 1; i < 10; ++i) {
+        if (i % 2 == 0) {
+            out.receive() | increment_on_executor | detach();
+            in.send(meta::unit{}) | detach();
+        } else {
+            in.send(meta::unit{}) | detach();
+            out.receive() | increment_on_executor | detach();
+        }
+        EXPECT_EQ(counter, i - 1);
+        EXPECT_EQ(an_executor.execute_batch(), 1);
+        EXPECT_EQ(counter, i);
+        EXPECT_EQ(an_executor.execute_batch(), 0);
+        EXPECT_EQ(counter, i);
+    }
+
+    {
+        in.send(meta::unit{}) | detach();
+        out.receive() | increment_on_executor | detach();
+        an_executor.stop(); // should cancel current receive
+        EXPECT_EQ(an_executor.execute_batch(), 0);
+        EXPECT_EQ(counter, 9);
+
+        in.send(meta::unit{}) | detach();
+        EXPECT_EQ(an_executor.execute_batch(), 0);
+        EXPECT_EQ(counter, 9);
+    }
+}
+
 } // namespace sl::exec
