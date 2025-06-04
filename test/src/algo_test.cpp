@@ -3,6 +3,7 @@
 //
 
 #include "sl/exec/algo.hpp"
+#include "sl/exec/algo/emit/box_subscribe.hpp"
 #include "sl/exec/model.hpp"
 #include "sl/exec/thread/event.hpp"
 
@@ -332,6 +333,74 @@ TEST(algo, box) {
     const auto maybe_result = std::move(boxed_signal) | get<nowait_event>();
     ASSERT_TRUE(maybe_result.has_value());
     EXPECT_EQ(maybe_result.value(), 69);
+}
+
+TEST(algo, pipeSimple) {
+    auto [in, out] = make_pipe<meta::unit, meta::undefined>();
+
+    std::size_t counter = 0;
+    const auto increment = [&](meta::unit) {
+        ++counter;
+        return meta::unit{};
+    };
+
+    in.send(meta::unit{}) | detach();
+    // would ASSERT with "only single producer"
+    // in.send(meta::unit{}) | detach();
+
+    out.receive() | map(increment) | detach();
+
+    ASSERT_EQ(counter, 1);
+
+    {
+        auto subscription = out.receive() | map(increment) | subscribe();
+        std::move(subscription).emit();
+
+        EXPECT_EQ(counter, 1);
+
+        for (int i = 2; i < 10; ++i) {
+            auto signal = in.send(meta::unit{});
+            EXPECT_EQ(counter, i - 1);
+            std::move(signal) | get<nowait_event>();
+            EXPECT_EQ(counter, i);
+        }
+    }
+}
+
+TEST(algo, pipeExecutor) {
+    auto [in, out] = make_pipe<meta::unit, meta::undefined>();
+
+    std::size_t counter = 0;
+    const auto increment = [&](meta::unit) {
+        ++counter;
+        return meta::unit{};
+    };
+
+    manual_executor an_executor;
+    {
+        const boxed_subscription a_sub = out.receive() | continue_on(an_executor) | map(increment) | box_subscribe();
+
+        EXPECT_EQ(counter, 0);
+
+        for (int i = 1; i < 10; ++i) {
+            in.send(meta::unit{}) | detach();
+            EXPECT_EQ(counter, i - 1);
+            EXPECT_EQ(an_executor.execute_batch(), 1);
+            EXPECT_EQ(counter, i);
+            EXPECT_EQ(an_executor.execute_batch(), 0);
+            EXPECT_EQ(counter, i);
+        }
+
+        // an executor(and all the task handles inside) need to be stopped or destroyed before connection
+        // otherwise potential SEGFAULT
+        // there is no way to handle this gracefully in the current design
+        in.send(meta::unit{}) | detach();
+        an_executor.stop();
+    }
+
+    in.send(meta::unit{}) | detach();
+    EXPECT_EQ(an_executor.execute_batch(), 0);
+    EXPECT_EQ(counter, 9);
 }
 
 } // namespace sl::exec
