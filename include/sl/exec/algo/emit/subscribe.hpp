@@ -5,7 +5,7 @@
 //
 // Example:
 // subscribe_connection imalive = signal | subscribe();
-// imalive.emit();
+// std::move(imalive).emit();
 //
 
 #pragma once
@@ -13,15 +13,13 @@
 #include "sl/exec/model/concept.hpp"
 
 #include <sl/meta/traits/unique.hpp>
+#include <sl/meta/type/undefined.hpp>
+#include <sl/meta/type/unit.hpp>
 
 namespace sl::exec {
 
 template <SomeSignal SignalT, typename SlotT>
-class [[nodiscard]] subscribe_connection : meta::immovable {
-    using value_type = typename SignalT::value_type;
-    using error_type = typename SignalT::error_type;
-
-public:
+struct [[nodiscard]] subscribe_connection : meta::immovable {
     constexpr subscribe_connection(SignalT signal, SlotT slot)
         : slot_{ std::move(slot) }, connection_{ std::move(signal).subscribe(slot_) } {}
 
@@ -33,20 +31,18 @@ public:
     void emit() && { std::move(connection_).emit(); }
 
 private:
-    SlotT slot_{};
+    SlotT slot_;
     ConnectionFor<SignalT> connection_;
 };
 
 namespace detail {
 
 struct subscribe_emit {
-    template <SomeSignal SignalT>
+    template <Signal<meta::unit, meta::undefined> SignalT>
     constexpr Connection auto operator()(SignalT&& signal) && {
-        using value_type = typename SignalT::value_type;
-        using error_type = typename SignalT::error_type;
         return subscribe_connection{
             /* .signal = */ std::move(signal),
-            /* .slot = */ dummy_slot<value_type, error_type>{},
+            /* .slot = */ dummy_slot<meta::unit, meta::undefined>{},
         };
     }
 };
