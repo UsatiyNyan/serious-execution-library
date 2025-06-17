@@ -25,7 +25,7 @@ template <typename ValueT, typename ErrorT, template <typename> typename Atomic>
 struct pipe_storage {
     using result_type = meta::result<ValueT, ErrorT>;
 
-    struct pipe_state {
+    struct pipe_state : cancel_mixin {
         enum class tag { in, out };
 
         virtual ~pipe_state() = default;
@@ -35,12 +35,26 @@ struct pipe_storage {
         bool is_out() const& { return get_tag() == tag::out; }
     };
 
-    struct in_type : pipe_state {
+    struct [[nodiscard]] in_type final
+        : pipe_state
+        , meta::immovable {
         pipe_state::tag get_tag() const& override { return pipe_state::tag::in; }
 
     public:
-        in_type(meta::maybe<result_type> maybe_result, slot<meta::unit, meta::undefined>& in_slot)
-            : maybe_result_{ std::move(maybe_result) }, in_slot_{ in_slot } {}
+        in_type(
+            meta::maybe<result_type> maybe_result,
+            pipe_storage& storage,
+            slot<meta::unit, meta::undefined>& in_slot
+        )
+            : maybe_result_{ std::move(maybe_result) }, storage_{ storage }, in_slot_{ in_slot } {
+            in_slot_.intrusive_next = this;
+        }
+
+        // Connection
+        void emit() && { storage_.emit_in(*this); }
+
+        // cancel_mixin
+        bool try_cancel() & override { return storage_.unemit_in(*this); }
 
         void fulfill(slot<ValueT, ErrorT>& out_slot) noexcept {
             fulfill_slot(out_slot, std::move(maybe_result_));
@@ -49,19 +63,31 @@ struct pipe_storage {
 
     private:
         meta::maybe<result_type> maybe_result_;
+        pipe_storage& storage_;
         slot<meta::unit, meta::undefined>& in_slot_;
     };
 
-    struct out_type : pipe_state {
+    struct [[nodiscard]] out_type final
+        : pipe_state
+        , meta::immovable {
         pipe_state::tag get_tag() const& override { return pipe_state::tag::out; }
 
     public:
-        explicit out_type(slot<ValueT, ErrorT>& slot) : slot_{ slot } {}
+        out_type(pipe_storage& storage, slot<ValueT, ErrorT>& slot) : storage_{ storage }, out_slot_{ slot } {
+            out_slot_.intrusive_next = this;
+        }
 
-        slot<ValueT, ErrorT>& get_slot() { return slot_; }
+        // Connection
+        void emit() && { storage_.subscribe_out(*this); }
+
+        // cancel_mixin
+        bool try_cancel() & override { return storage_.unsubscribe_out(*this); }
+
+        slot<ValueT, ErrorT>& get_slot() const& { return out_slot_; }
 
     private:
-        slot<ValueT, ErrorT>& slot_;
+        pipe_storage& storage_;
+        slot<ValueT, ErrorT>& out_slot_;
     };
 
 public:
@@ -107,8 +133,19 @@ public:
         }
     }
 
-    void unemit_in(in_type& in) & { PANIC("TODO", in); }
-    void unsubscribe_out(out_type& out) & { PANIC("TODO", out); }
+    bool unemit_in(in_type& in) & {
+        pipe_state* expected = &in;
+        return state_.compare_exchange_strong(
+            expected, nullptr, std::memory_order::relaxed, std::memory_order::relaxed
+        );
+    }
+
+    bool unsubscribe_out(out_type& out) & {
+        pipe_state* expected = &out;
+        return state_.compare_exchange_strong(
+            expected, nullptr, std::memory_order::relaxed, std::memory_order::relaxed
+        );
+    }
 
 public: // refcount
     void decref() & {
@@ -129,25 +166,7 @@ template <typename ValueT, typename ErrorT, template <typename> typename Atomic 
 struct [[nodiscard]] pipe_in : meta::finalizer<pipe_in<ValueT, ErrorT, Atomic>> {
     using storage_type = detail::pipe_storage<ValueT, ErrorT, Atomic>;
     using result_type = meta::result<ValueT, ErrorT>;
-
-    struct [[nodiscard]] connection_type : meta::immovable {
-        connection_type(
-            meta::maybe<result_type> maybe_result,
-            storage_type& storage,
-            slot<meta::unit, meta::undefined>& slot
-        )
-            : in_{
-                  /* .maybe_result = */ std::move(maybe_result),
-                  /* .slot = */ slot,
-              },
-              storage_ref_{ storage } {}
-
-        void emit() && { storage_ref_.emit_in(in_); }
-
-    private:
-        storage_type::in_type in_;
-        storage_type& storage_ref_;
-    };
+    using connection_type = storage_type::in_type;
 
     struct [[nodiscard]] signal_type : meta::unique {
         using value_type = meta::unit;
@@ -203,20 +222,7 @@ private:
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic = detail::atomic>
 struct [[nodiscard]] pipe_out : meta::finalizer<pipe_out<ValueT, ErrorT, Atomic>> {
     using storage_type = detail::pipe_storage<ValueT, ErrorT, Atomic>;
-
-    struct [[nodiscard]] connection_type : meta::immovable {
-        using out_type = typename storage_type::out_type;
-
-    public:
-        explicit connection_type(storage_type& storage, slot<ValueT, ErrorT>& slot)
-            : out_{ slot }, storage_ref_{ storage } {}
-
-        void emit() && { storage_ref_.subscribe_out(out_); }
-
-    private:
-        out_type out_;
-        storage_type& storage_ref_;
-    };
+    using connection_type = storage_type::out_type;
 
     struct [[nodiscard]] signal_type : meta::unique {
         using value_type = ValueT;
