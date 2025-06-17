@@ -18,7 +18,7 @@ constexpr auto operator|(SignalT&& signal, ContinuationTV&& continuation) {
 template <typename ValueT, typename ErrorT>
 void fulfill_slot(slot<ValueT, ErrorT>& slot, meta::maybe<meta::result<ValueT, ErrorT>> maybe_result) {
     if (!maybe_result.has_value()) {
-        slot.cancel();
+        slot.set_null();
         return;
     }
 

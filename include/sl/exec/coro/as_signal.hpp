@@ -27,9 +27,9 @@ private:
     static async<void> make_connection_coro(async<ValueT> async, slot<ValueT, ErrorT>& slot) {
         // coroutine handle can be destroyed at any point, when executor destroys it's tasks
         bool is_fulfilled = false;
-        const meta::defer cancel_if_not_fulfilled{ [&] {
+        const meta::defer set_null_if_not_fulfilled{ [&] {
             if (!is_fulfilled) {
-                slot.cancel();
+                slot.set_null();
             }
         } };
         try {

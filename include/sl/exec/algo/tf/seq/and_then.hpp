@@ -30,7 +30,7 @@ struct [[nodiscard]] and_then_slot : slot<InputValueT, ErrorT> {
                 self_.slot_.set_error(std::move(result).error());
             }
         }
-        void cancel() noexcept override { self_.cancel(); };
+        void cancel() noexcept override { self_.set_null(); };
 
     private:
         and_then_slot& self_;
@@ -45,7 +45,7 @@ struct [[nodiscard]] and_then_slot : slot<InputValueT, ErrorT> {
         executor_.schedule(&task);
     }
     void set_error(ErrorT&& error) & override { slot_.set_error(std::move(error)); }
-    void cancel() & override { slot_.cancel(); }
+    void set_null() & override { slot_.set_null(); }
 
 private:
     F functor_;

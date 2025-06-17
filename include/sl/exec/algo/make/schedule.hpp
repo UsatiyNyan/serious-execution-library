@@ -25,7 +25,7 @@ struct [[nodiscard]] schedule_connection : task_node {
             slot_.set_error(std::move(result).error());
         }
     }
-    void cancel() noexcept override { slot_.cancel(); }
+    void cancel() noexcept override { slot_.set_null(); }
 
 private:
     F functor_;

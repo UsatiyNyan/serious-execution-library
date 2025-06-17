@@ -16,7 +16,7 @@ struct slot {
 
     virtual void set_value(ValueT&&) & = 0;
     virtual void set_error(ErrorT&&) & = 0;
-    virtual void cancel() & = 0;
+    virtual void set_null() & = 0;
 };
 
 template <typename ValueT, typename ErrorT>
@@ -25,7 +25,7 @@ struct dummy_slot final : slot<ValueT, ErrorT> {
 
     void set_value(ValueT&&) & override {}
     void set_error(ErrorT&&) & override {}
-    void cancel() & override {}
+    void set_null() & override {}
 };
 
 template <typename ValueT, typename ErrorT>
@@ -37,7 +37,7 @@ struct slot_node
 
     void set_value(ValueT&& value) & override { slot_.set_value(std::move(value)); }
     void set_error(ErrorT&& error) & override { slot_.set_error(std::move(error)); }
-    void cancel() & override { slot_.cancel(); }
+    void set_null() & override { slot_.set_null(); }
 
 private:
     slot<ValueT, ErrorT>& slot_;

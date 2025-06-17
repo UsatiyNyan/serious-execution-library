@@ -34,7 +34,7 @@ struct [[nodiscard]] force_storage {
         void set_error(error_type&& error) & override {
             self_.set_result(result_type{ tl::unexpect, std::move(error) });
         }
-        void cancel() & override { self_.set_result(meta::null); }
+        void set_null() & override { self_.set_result(meta::null); }
 
     private:
         force_storage& self_;

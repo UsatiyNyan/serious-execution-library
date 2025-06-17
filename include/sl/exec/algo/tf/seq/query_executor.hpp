@@ -28,7 +28,7 @@ struct query_executor_signal {
         void set_error(typename SignalT::error_type&& error) & override {
             slot_.set_error(error_type{ executor_, std::move(error) });
         }
-        void cancel() & override { slot_.cancel(); }
+        void set_null() & override { slot_.set_null(); }
 
     private:
         executor& executor_;

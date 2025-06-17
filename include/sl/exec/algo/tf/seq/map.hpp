@@ -26,7 +26,7 @@ struct [[nodiscard]] map_slot : slot<InputValueT, ErrorT> {
             auto value = self_.functor_(std::move(self_.maybe_value_).value());
             self_.slot_.set_value(std::move(value));
         }
-        void cancel() noexcept override { self_.cancel(); };
+        void cancel() noexcept override { self_.set_null(); };
 
     private:
         map_slot& self_;
@@ -41,7 +41,7 @@ struct [[nodiscard]] map_slot : slot<InputValueT, ErrorT> {
         executor_.schedule(&task);
     }
     void set_error(ErrorT&& error) & override { slot_.set_error(std::move(error)); }
-    void cancel() & override { slot_.cancel(); }
+    void set_null() & override { slot_.set_null(); }
 
 private:
     F functor_;

@@ -28,7 +28,7 @@ private:
 
         void set_value(ValueT&& value) & override { self_.set_value_impl(std::move(value)); }
         void set_error(ErrorT&& error) & override { self_.set_error_impl(std::move(error)); }
-        void cancel() & override { self_.cancel_impl(); }
+        void set_null() & override { self_.set_null_impl(); }
 
     private:
         any_connection& self_;
@@ -86,7 +86,7 @@ private:
         }
     }
 
-    void cancel_impl() {
+    void set_null_impl() {
         meta::defer cleanup{ [this] {
             const bool is_last = increment_and_check();
             if (is_last) {
@@ -95,7 +95,7 @@ private:
         } };
 
         if (!done_.exchange(true, std::memory_order::acq_rel)) {
-            slot_.cancel();
+            slot_.set_null();
         }
     }
 

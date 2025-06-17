@@ -20,7 +20,7 @@ class detach_connection {
 
         void set_value(value_type&&) & override { delete self_; }
         void set_error(error_type&&) & override { delete self_; }
-        void cancel() & override { delete self_; }
+        void set_null() & override { delete self_; }
 
     private:
         detach_connection* self_;

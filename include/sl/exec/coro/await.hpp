@@ -45,7 +45,7 @@ public:
         maybe_result_.emplace(tl::unexpect, std::move(error));
         executor_.schedule(&task_);
     }
-    void cancel() & override { task_.cancel(); }
+    void set_null() & override { task_.cancel(); }
 
 private:
     awaiter_task task_;

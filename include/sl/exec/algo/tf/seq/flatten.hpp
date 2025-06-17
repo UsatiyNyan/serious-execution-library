@@ -25,7 +25,7 @@ struct [[nodiscard]] flatten_slot : slot<SignalValueT, ErrorT> {
         std::move(connection).emit();
     }
     void set_error(ErrorT&& error) & override { slot_.set_error(std::move(error)); }
-    void cancel() & override { slot_.cancel(); }
+    void set_null() & override { slot_.set_null(); }
 
 private:
     meta::maybe<ConnectionFor<SignalValueT>> maybe_connection_;

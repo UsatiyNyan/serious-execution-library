@@ -25,7 +25,7 @@ public:
         event.set();
     }
 
-    void cancel() & override {
+    void set_null() & override {
         ASSUME(!maybe_result.has_value());
         event.set();
     }

@@ -44,7 +44,7 @@ struct [[nodiscard]] promise
     explicit promise(slot<ValueT, ErrorT>* slot) : slot_{ slot } { DEBUG_ASSERT(slot_ != nullptr); }
     ~promise() override {
         if (slot_ != nullptr && !done_) {
-            slot_->cancel();
+            slot_->set_null();
         }
     }
     promise(promise&& other) noexcept
@@ -62,9 +62,9 @@ struct [[nodiscard]] promise
             done_ = true;
         }
     }
-    void cancel() & override {
+    void set_null() & override {
         if (ASSUME_VAL(!done_)) {
-            slot_->cancel();
+            slot_->set_null();
             done_ = true;
         }
     }
