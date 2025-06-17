@@ -25,6 +25,11 @@
 namespace sl::exec {
 namespace detail {
 
+template <typename ValueT, typename ErrorT>
+struct share_node : meta::intrusive_forward_list_node<share_node<ValueT, ErrorT>> {
+    slot<ValueT, ErrorT>& slot;
+};
+
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic>
 struct [[nodiscard]] share_storage_base {
     using value_type = ValueT;
@@ -80,31 +85,27 @@ public: // refcount
     }
 
 public: // fulfillment
-    void emit(exec::slot_node<ValueT, ErrorT>& slot_node) & {
+    void emit(share_node<ValueT, ErrorT>& node) & {
         std::uintptr_t state = share_state_empty;
         if (state_.compare_exchange_strong(
-                state,
-                reinterpret_cast<std::uintptr_t>(&slot_node),
-                std::memory_order::release,
-                std::memory_order::acquire
+                state, reinterpret_cast<std::uintptr_t>(&node), std::memory_order::release, std::memory_order::acquire
             )) {
             internal_connection_emit();
             return;
         }
 
         do {
-            slot_node.intrusive_next = reinterpret_cast<exec::slot_node<value_type, error_type>*>(state);
-        } while (state != share_state_result
-                 && !state_.compare_exchange_weak(
-                     state,
-                     reinterpret_cast<std::uintptr_t>(&slot_node),
-                     std::memory_order::release,
-                     std::memory_order::acquire
-                 ));
+            node.intrusive_next = reinterpret_cast<share_node<value_type, error_type>*>(state);
+        } while (
+            state != share_state_result
+            && !state_.compare_exchange_weak(
+                state, reinterpret_cast<std::uintptr_t>(&node), std::memory_order::release, std::memory_order::acquire
+            )
+        );
 
         if (state == share_state_result) {
             // exlicit copy, unfortunately
-            fulfill_slot(slot_node, meta::maybe<result_type>{ maybe_result_ });
+            fulfill_slot(node.slot, meta::maybe<result_type>{ maybe_result_ });
             decref();
         }
     }
@@ -121,17 +122,16 @@ private:
         }
         DEBUG_ASSERT(state != share_state_result);
 
-        auto* slot_list = reinterpret_cast<exec::slot_node<value_type, error_type>*>(state);
+        auto* node_list = reinterpret_cast<share_node<value_type, error_type>*>(state);
 
         // if any exceptions are thrown, probably everything breaks here
         std::uint32_t slot_list_count = 0;
 
         meta::intrusive_forward_list_node_for_each(
-            slot_list,
-            [&slot_list_count,
-             &maybe_result_ref = maybe_result_](exec::slot_node<value_type, error_type>* slot_node_ptr) {
+            node_list,
+            [&slot_list_count, &maybe_result_ref = maybe_result_](share_node<value_type, error_type>* node_ptr) {
                 // exlicit copy, unfortunately
-                fulfill_slot(*slot_node_ptr, meta::maybe<result_type>{ maybe_result_ref });
+                fulfill_slot(node_ptr->slot, meta::maybe<result_type>{ maybe_result_ref });
                 ++slot_list_count;
             }
         );
@@ -166,24 +166,24 @@ private:
     subscribe_connection<SignalT, slot_type> connection_;
 };
 
-
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic>
 struct [[nodiscard]] share_connection : meta::immovable {
     constexpr share_connection(
         detail::share_storage_base<ValueT, ErrorT, Atomic>* storage_ptr,
         slot<ValueT, ErrorT>& slot
     )
-        : slot_node_{ slot }, storage_ptr_{ storage_ptr } {}
+        : node_{ .slot = slot }, storage_ptr_{ storage_ptr } {}
+
     ~share_connection() { detail::share_storage_base<ValueT, ErrorT, Atomic>::try_decref(storage_ptr_); }
 
     void emit() && {
         auto* storage_ptr = std::exchange(storage_ptr_, nullptr);
         DEBUG_ASSERT(nullptr != storage_ptr);
-        storage_ptr->emit(slot_node_);
+        storage_ptr->emit(node_);
     }
 
 private:
-    exec::slot_node<ValueT, ErrorT> slot_node_;
+    share_node<ValueT, ErrorT> node_;
     detail::share_storage_base<ValueT, ErrorT, Atomic>* storage_ptr_;
 };
 

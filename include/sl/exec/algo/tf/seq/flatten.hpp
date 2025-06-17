@@ -17,7 +17,7 @@ namespace detail {
 
 template <typename SignalValueT, typename ValueT, typename ErrorT>
 struct [[nodiscard]] flatten_slot : slot<SignalValueT, ErrorT> {
-    constexpr explicit flatten_slot(slot<ValueT, ErrorT>& slot) : slot_{ slot } {}
+    constexpr explicit flatten_slot(slot<ValueT, ErrorT>& slot) : slot_{ slot } { slot_.intrusive_next = this; }
 
     void set_value(SignalValueT&& value) & override {
         Connection auto& connection =

@@ -37,7 +37,9 @@ struct [[nodiscard]] or_else_slot : slot<ValueT, InputErrorT> {
     };
 
     or_else_slot(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
-        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
+        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {
+        slot_.intrusive_next = this;
+    }
 
     void set_value(ValueT&& value) & override { slot_.set_value(std::move(value)); }
     void set_error(InputErrorT&& error) & override {

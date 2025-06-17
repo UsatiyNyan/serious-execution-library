@@ -6,12 +6,21 @@
 
 #include <sl/meta/intrusive/forward_list.hpp>
 
-#include <utility>
-
 namespace sl::exec {
 
+struct cancel_mixin : meta::intrusive_forward_list_node<cancel_mixin> {
+    virtual ~cancel_mixin() = default;
+
+    [[nodiscard]] virtual bool try_cancel() & {
+        if (nullptr == intrusive_next) {
+            return false;
+        }
+        return intrusive_next->downcast()->try_cancel();
+    }
+};
+
 template <typename ValueT, typename ErrorT>
-struct slot {
+struct slot : cancel_mixin {
     virtual ~slot() = default;
 
     virtual void set_value(ValueT&&) & = 0;
@@ -27,23 +36,5 @@ struct dummy_slot final : slot<ValueT, ErrorT> {
     void set_error(ErrorT&&) & override {}
     void set_null() & override {}
 };
-
-template <typename ValueT, typename ErrorT>
-struct slot_node
-    : slot<ValueT, ErrorT>
-    , meta::intrusive_forward_list_node<slot_node<ValueT, ErrorT>> {
-
-    constexpr explicit slot_node(slot<ValueT, ErrorT>& slot) : slot_{ slot } {}
-
-    void set_value(ValueT&& value) & override { slot_.set_value(std::move(value)); }
-    void set_error(ErrorT&& error) & override { slot_.set_error(std::move(error)); }
-    void set_null() & override { slot_.set_null(); }
-
-private:
-    slot<ValueT, ErrorT>& slot_;
-};
-
-template <typename ValueT, typename ErrorT>
-using slot_list = meta::intrusive_forward_list<slot_node<ValueT, ErrorT>>;
 
 } // namespace sl::exec

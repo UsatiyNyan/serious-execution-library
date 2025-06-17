@@ -18,7 +18,7 @@
 
 namespace sl::exec {
 
-template <SomeSignal SignalT, typename SlotT>
+template <SomeSignal SignalT, std::derived_from<ISlotFor<SignalT>> SlotT>
 struct [[nodiscard]] subscribe_connection : meta::immovable {
     constexpr subscribe_connection(SignalT signal, SlotT slot)
         : slot_{ std::move(slot) }, connection_{ std::move(signal).subscribe(slot_) } {}

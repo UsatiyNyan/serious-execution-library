@@ -9,6 +9,7 @@
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/model/syntax.hpp"
 
+#include <sl/meta/lifetime/finalizer.hpp>
 #include <sl/meta/traits/unique.hpp>
 
 #include <libassert/assert.hpp>
@@ -40,38 +41,39 @@ private:
 template <typename ValueT, typename ErrorT>
 struct [[nodiscard]] promise
     : slot<ValueT, ErrorT>
-    , meta::unique {
-    explicit promise(slot<ValueT, ErrorT>* slot) : slot_{ slot } { DEBUG_ASSERT(slot_ != nullptr); }
-    ~promise() override {
-        if (slot_ != nullptr && !done_) {
-            slot_->set_null();
-        }
+    , meta::finalizer<promise<ValueT, ErrorT>> {
+    explicit promise(slot<ValueT, ErrorT>* slot)
+        : meta::finalizer<promise>{ [](promise& self) {
+              if (auto* const slot = std::exchange(self.slot_, nullptr); slot != nullptr) {
+                  slot->set_null();
+              }
+          } },
+          slot_{ slot } {
+        DEBUG_ASSERT(slot_ != nullptr);
+        slot_->intrusive_next = this;
     }
-    promise(promise&& other) noexcept
-        : slot_{ std::exchange(other.slot_, nullptr) }, done_{ std::exchange(other.done_, false) } {}
 
     void set_value(ValueT&& value) & override {
-        if (ASSUME_VAL(!done_)) {
-            slot_->set_value(std::move(value));
-            done_ = true;
+        auto* const slot = std::exchange(slot_, nullptr);
+        if (ASSUME_VAL(slot != nullptr)) {
+            slot->set_value(std::move(value));
         }
     }
     void set_error(ErrorT&& error) & override {
-        if (ASSUME_VAL(!done_)) {
-            slot_->set_error(std::move(error));
-            done_ = true;
+        auto* const slot = std::exchange(slot_, nullptr);
+        if (ASSUME_VAL(slot != nullptr)) {
+            slot->set_error(std::move(error));
         }
     }
     void set_null() & override {
-        if (ASSUME_VAL(!done_)) {
-            slot_->set_null();
-            done_ = true;
+        auto* const slot = std::exchange(slot_, nullptr);
+        if (ASSUME_VAL(slot != nullptr)) {
+            slot->set_null();
         }
     }
 
 private:
     slot<ValueT, ErrorT>* slot_;
-    bool done_ = false;
 };
 
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic = detail::atomic>

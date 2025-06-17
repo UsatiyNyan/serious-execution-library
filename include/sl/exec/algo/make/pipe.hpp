@@ -5,8 +5,6 @@
 // Signals in.send(...) and out.receive() can be created multiple times
 // subscriptions will still be one-shot
 // REQUIREMENT: have to wait for `send`/`receive` signals to finish before destroying `in`/`out`
-//
-// TODO: think about graceful bottom-up cancellation
 
 #pragma once
 

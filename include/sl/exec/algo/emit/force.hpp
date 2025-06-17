@@ -25,7 +25,7 @@ struct [[nodiscard]] force_storage {
         force_state_result = std::numeric_limits<std::uintptr_t>::max(),
     };
 
-    struct force_slot : slot<value_type, error_type> {
+    struct force_slot final : slot<value_type, error_type> {
         explicit force_slot(force_storage& self) : self_{ self } {}
 
         void set_value(value_type&& value) & override {

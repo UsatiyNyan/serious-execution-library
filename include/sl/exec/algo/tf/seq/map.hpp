@@ -33,7 +33,9 @@ struct [[nodiscard]] map_slot : slot<InputValueT, ErrorT> {
     };
 
     map_slot(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
-        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
+        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {
+        slot_.intrusive_next = this;
+    }
 
     void set_value(InputValueT&& value) & override {
         maybe_value_.emplace(std::move(value));
