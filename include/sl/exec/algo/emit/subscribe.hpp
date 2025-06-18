@@ -30,6 +30,8 @@ struct [[nodiscard]] subscribe_connection : meta::immovable {
 
     void emit() && { std::move(connection_).emit(); }
 
+    cancel_mixin& cancel_handle() & { return slot_; }
+
 private:
     SlotT slot_;
     ConnectionFor<SignalT> connection_;

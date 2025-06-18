@@ -110,7 +110,7 @@ TEST(algo, anySimple) {
     ASSERT_EQ(*maybe_result, 42);
 }
 
-TEST(algo, andSimple) {
+TEST(algo, allSimple) {
     auto s1 = value_as_signal(42);
     auto s2 = value_as_signal(69);
     auto s12 = all(std::move(s1), std::move(s2));
