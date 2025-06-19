@@ -43,11 +43,13 @@ as a description of the source of asynchrony.
   - `mutex` - wrapper around serial executor, has better unlock strategy (w/o thundering herd)
 - `tf/seq` - sequential transforms of `signal`-s
   - `and_then`, `or_else`, `map`, `map_error`, `flatten` - classic monadic operations
-  - `box` - type erasure, would put `signal` and `connection` state on heap
-  - `query_executor` - populate pipeline context with previous `signal-s` executor, may differ from actual executor at the point of `emit`
 - `tf/par` - enabling parallel execution and races
   - `all`, `any` - classic monadic operations, support cancellation of abandoned `signals`
   - `fork` - replicate signal for multiple pipelines
+- `tf/type` - type transformations for signals
+  - `box` - type erasure, would put `signal` and `connection` state on heap
+  - `query_executor` - populate pipeline context with previous `signal-s` executor, may differ from actual executor at the point of `emit`
+  - `cancellable` - injects a cancellation point into pipeline, stops slot fulfillment propagation further if cancelled
 - `emit` - evaluation points, where `connection` is formed or calculation is eagerly executed
   - `get` - explicitly blocks until `signal` is evaluated, should be used in synchronous code
   - `detach` - begins evaluation, but does not return value
@@ -84,8 +86,10 @@ async<...> coro(T x);
 
 # TODO
 
+- [ ] slots:
+  - [ ] noexcept
+  - [ ] set_result(...) -> bool
 - [ ] channel
 - [ ] thread::pool::distributed
 - [ ] TESTS
-- [ ] require noexcept from all slot-s
 
