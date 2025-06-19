@@ -409,4 +409,153 @@ TEST(algo, pipeExecutor) {
     }
 }
 
+TEST(algo, cancellableSimple) {
+    {
+        meta::maybe<meta::result<int, meta::undefined>> maybe_result =
+            value_as_signal(42) | cancellable() | get<nowait_event>();
+        ASSERT_TRUE(maybe_result.has_value());
+        ASSERT_EQ(**maybe_result, 42);
+    }
+
+    {
+        bool done = false;
+        auto connection = value_as_signal(meta::unit{}) | cancellable() | map([&done](meta::unit) {
+                              done = true;
+                              PANIC("should not be executed");
+                              return meta::unit{};
+                          })
+                          | subscribe();
+        auto& cancel_handle = connection.get_cancel_handle();
+        EXPECT_TRUE(cancel_handle.try_cancel());
+
+        std::move(connection).emit();
+        EXPECT_FALSE(done);
+    }
+
+    {
+        bool done = false;
+        auto connection = value_as_signal(meta::unit{}) | cancellable() | map([&done](meta::unit) {
+                              done = true;
+                              return meta::unit{};
+                          })
+                          | subscribe();
+        auto& cancel_handle = connection.get_cancel_handle();
+        std::move(connection).emit();
+
+        EXPECT_FALSE(cancel_handle.try_cancel());
+        EXPECT_TRUE(done);
+    }
+}
+
+TEST(algo, cancellableSchedule) {
+    manual_executor executor;
+
+    struct {
+        std::size_t schedule = 0;
+        std::size_t map = 0;
+    } counters;
+
+    auto connection = //
+        schedule(
+            executor,
+            [&counters] {
+                ++counters.schedule;
+                return meta::ok(meta::unit{});
+            }
+        )
+        | cancellable() //
+        | map([&counters](meta::unit) {
+              ++counters.map;
+              return meta::unit{};
+          })
+        | subscribe();
+
+    auto& cancel_handle = connection.get_cancel_handle();
+    std::move(connection).emit();
+
+    EXPECT_TRUE(cancel_handle.try_cancel());
+    EXPECT_EQ(counters.schedule, 0);
+    EXPECT_EQ(counters.map, 0);
+
+    EXPECT_EQ(executor.execute_batch(), 1);
+    EXPECT_EQ(counters.schedule, 1);
+    EXPECT_EQ(counters.map, 0);
+    EXPECT_EQ(executor.execute_batch(), 0);
+}
+
+TEST(algo, cancellablePipe) {
+    auto [in, out] = make_pipe<meta::unit, meta::undefined>();
+    std::size_t counter = 0;
+
+    auto connection = //
+        out.receive() //
+        | map([&counter](meta::unit) {
+              ++counter;
+              return meta::unit{};
+          })
+        | subscribe();
+    auto& cancel_handle = connection.get_cancel_handle();
+    EXPECT_TRUE(cancel_handle.intrusive_next);
+    EXPECT_TRUE(cancel_handle.intrusive_next->intrusive_next);
+
+    std::move(connection).emit();
+    EXPECT_TRUE(cancel_handle.try_cancel());
+
+    in.send(meta::unit{}) | detach();
+    EXPECT_EQ(counter, 0);
+
+    // would ASSERT
+    // in.send(meta::unit{}) | detach();
+}
+
+TEST(algo, cancellablePipeAll) {
+    std::size_t counter1 = 0;
+    std::size_t counter2 = 0;
+    std::size_t counter_all = 0;
+
+    auto [in1, out1] = make_pipe<meta::unit, meta::unit>();
+    auto [in2, out2] = make_pipe<meta::unit, meta::unit>();
+
+    auto signal1 = out1.receive() | map_error([&counter1](meta::unit) {
+                       ++counter1;
+                       return meta::unit{};
+                   });
+    auto signal2 = out2.receive() | map_error([&counter2](meta::unit) {
+                       ++counter2;
+                       return meta::unit{};
+                   });
+
+    all(std::move(signal1), std::move(signal2)) | map_error([&counter_all](meta::unit) {
+        ++counter_all;
+        return meta::unit{};
+    }) | detach();
+
+    in1.send(meta::err(meta::unit{})) | detach();
+    EXPECT_EQ(counter1, 1);
+    EXPECT_EQ(counter2, 0);
+    EXPECT_EQ(counter_all, 1);
+
+    in2.send(meta::err(meta::unit{})) | detach();
+    EXPECT_EQ(counter1, 1);
+    EXPECT_EQ(counter2, 0);
+    EXPECT_EQ(counter_all, 1);
+
+    // will ASSERT
+    // in2.send(meta::err(meta::unit{})) | detach();
+
+    out2.receive() | map_error([&counter2](meta::unit) {
+        ++counter2;
+        return meta::unit{};
+    }) | detach();
+    EXPECT_EQ(counter1, 1);
+    EXPECT_EQ(counter2, 1);
+    EXPECT_EQ(counter_all, 1);
+}
+
+// TEST(algo, cancellablePipeAny) {
+// auto [in, out] = make_pipe<meta::unit, meta::undefined>();
+// }
+
+// TEST(algo, cancellablePipeCombinatorsCancelled) {}
+
 } // namespace sl::exec

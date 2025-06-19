@@ -46,23 +46,19 @@ struct pipe_storage {
             pipe_storage& storage,
             slot<meta::unit, meta::undefined>& in_slot
         )
-            : maybe_result_{ std::move(maybe_result) }, storage_{ storage }, in_slot_{ in_slot } {}
+            : maybe_result_{ std::move(maybe_result) }, storage_{ storage }, in_slot_{ in_slot } {
+            in_slot_.intrusive_next = this;
+        }
 
         // Connection
         cancel_mixin& get_cancel_handle() & {
-            setup_cancellation();
+            ASSERT(in_slot_.intrusive_next == this);
             return in_slot_;
         }
         void emit() && { storage_.emit_in(*this); }
 
         // cancel_mixin
-        void setup_cancellation() & override {
-            if (in_slot_.intrusive_next == nullptr) {
-                in_slot_.intrusive_next = this;
-            } else {
-                ASSERT(in_slot_.intrusive_next == this);
-            }
-        }
+        void setup_cancellation() & override { ASSERT(in_slot_.intrusive_next == this); }
         bool try_cancel() & override { return storage_.unemit_in(*this); }
 
         void fulfill(slot<ValueT, ErrorT>& out_slot) noexcept {
@@ -82,23 +78,19 @@ struct pipe_storage {
         pipe_state::tag get_tag() const& override { return pipe_state::tag::out; }
 
     public:
-        out_type(pipe_storage& storage, slot<ValueT, ErrorT>& slot) : storage_{ storage }, out_slot_{ slot } {}
+        out_type(pipe_storage& storage, slot<ValueT, ErrorT>& slot) : storage_{ storage }, out_slot_{ slot } {
+            out_slot_.intrusive_next = this;
+        }
 
         // Connection
         cancel_mixin& get_cancel_handle() & {
-            setup_cancellation();
+            ASSERT(out_slot_.intrusive_next == this);
             return out_slot_;
         }
         void emit() && { storage_.subscribe_out(*this); }
 
         // cancel_mixin
-        void setup_cancellation() & override {
-            if (out_slot_.intrusive_next == nullptr) {
-                out_slot_.intrusive_next = this;
-            } else {
-                ASSERT(out_slot_.intrusive_next == this);
-            }
-        }
+        void setup_cancellation() & override { ASSERT(out_slot_.intrusive_next == this); }
         bool try_cancel() & override { return storage_.unsubscribe_out(*this); }
 
         slot<ValueT, ErrorT>& get_slot() const& { return out_slot_; }
