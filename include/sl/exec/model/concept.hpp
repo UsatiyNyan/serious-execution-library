@@ -16,10 +16,9 @@
 namespace sl::exec {
 
 template <typename ConnectionT>
-concept Connection = requires(ConnectionT&& connection) { std::move(connection).emit(); };
-
-struct [[nodiscard]] dummy_connection : meta::immovable {
-    constexpr void emit() && {}
+concept Connection = requires(ConnectionT connection) {
+    { connection.get_cancel_handle() } -> std::same_as<cancel_mixin&>;
+    std::move(connection).emit();
 };
 
 template <typename SomeSignalT>

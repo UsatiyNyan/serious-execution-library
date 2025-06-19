@@ -11,7 +11,7 @@ namespace sl::exec {
 namespace detail {
 
 template <SomeSignal SignalT>
-class detach_connection {
+struct [[nodiscard]] detach_connection {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
@@ -27,8 +27,9 @@ class detach_connection {
     };
 
 public:
-    constexpr detach_connection(SignalT&& signal) : connection_{ std::move(signal), detach_slot{ this } } {}
+    constexpr detach_connection(SignalT signal) : connection_{ std::move(signal), detach_slot{ this } } {}
 
+    cancel_mixin& get_cancel_handle() & { return connection_.get_cancel_handle(); }
     void emit() && { std::move(connection_).emit(); }
 
 private:

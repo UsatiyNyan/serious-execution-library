@@ -18,6 +18,18 @@ namespace sl::exec {
 namespace detail {
 
 template <typename ValueT, typename ErrorT>
+struct [[nodiscard]] promise_connection : meta::immovable {
+    explicit promise_connection(slot<ValueT, ErrorT>& slot) : slot_{ slot } {}
+
+    cancel_mixin& get_cancel_handle() & { return slot_; }
+
+    constexpr void emit() && {}
+
+private:
+    slot<ValueT, ErrorT>& slot_;
+};
+
+template <typename ValueT, typename ErrorT>
 struct [[nodiscard]] promise_signal : meta::unique {
     using value_type = ValueT;
     using error_type = ErrorT;
@@ -27,7 +39,7 @@ public:
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
         *slot_ = &slot;
-        return dummy_connection{};
+        return promise_connection{ slot };
     }
 
     executor& get_executor() { return exec::inline_executor(); }
@@ -50,7 +62,6 @@ struct [[nodiscard]] promise
           } },
           slot_{ slot } {
         DEBUG_ASSERT(slot_ != nullptr);
-        slot_->intrusive_next = this;
     }
 
     void set_value(ValueT&& value) & override {

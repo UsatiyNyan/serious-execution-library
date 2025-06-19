@@ -21,7 +21,9 @@ namespace sl::exec {
 namespace detail {
 
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic, SomeSignal... SignalTs>
-struct all_connection : meta::immovable {
+struct all_connection
+    : cancel_mixin
+    , meta::immovable {
 private:
     template <std::size_t Index, typename ElementValueT>
     struct all_slot : slot<ElementValueT, ErrorT> {
@@ -58,7 +60,7 @@ private:
     static std::array<cancel_mixin*, signals_count> make_cancel_handles(connections_type& connections) {
         std::array<cancel_mixin*, signals_count> cancel_handles;
         std::size_t i = 0;
-        meta::for_each([&](auto& x) { cancel_handles[i++] = &x.cancel_handle(); }, connections);
+        meta::for_each([&](Connection auto& x) { cancel_handles[i++] = &x.get_cancel_handle(); }, connections);
         ASSERT(i == signals_count);
         return cancel_handles;
     }
@@ -68,9 +70,37 @@ public:
         : connections_{ make_connections(*this, std::move(signals), std::make_index_sequence<signals_count>()) },
           cancel_handles_{ make_cancel_handles(connections_) }, slot_{ slot } {}
 
+    // Connection
+    cancel_mixin& get_cancel_handle() & {
+        ASSERT(slot_.intrusive_next == this);
+        return slot_;
+    }
     void emit() && {
         meta::for_each([](Connection auto&& connection) { std::move(connection).emit(); }, std::move(connections_));
     };
+
+    // cancel_mixin
+    void setup_cancellation() & override { slot_.intrusive_next = this; }
+    bool try_cancel() & override {
+        if (done_.exchange(true, std::memory_order::acq_rel)) {
+            return false;
+        }
+
+        std::uint32_t cancel_counter = 0;
+
+        for (std::size_t i = 0; i != cancel_handles_.size(); ++i) {
+            cancel_mixin& cancel_handle = *cancel_handles_[i];
+            const bool is_cancelled = cancel_handle.try_cancel();
+            cancel_counter += static_cast<std::uint32_t>(is_cancelled);
+        }
+
+        const bool is_last = increment_and_check(cancel_counter);
+        if (is_last) {
+            delete this;
+        }
+
+        return true;
+    }
 
 private:
     [[nodiscard]] bool increment_and_check(std::uint32_t diff = 1) {
@@ -163,7 +193,14 @@ struct all_connection_box {
         : connection_{ std::make_unique<all_connection<ValueT, ErrorT, Atomic, SignalTs...>>(
               /* .signals = */ std::move(signals),
               /* .slot = */ slot
-          ) } {}
+          ) } {
+        connection_->setup_cancellation();
+    }
+
+    cancel_mixin& get_cancel_handle() & {
+        ASSERT(connection_);
+        return connection_->get_cancel_handle();
+    }
 
     void emit() && {
         auto& connection = *DEBUG_ASSERT_VAL(connection_.release());

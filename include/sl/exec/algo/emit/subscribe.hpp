@@ -21,16 +21,20 @@ namespace sl::exec {
 template <SomeSignal SignalT, std::derived_from<ISlotFor<SignalT>> SlotT>
 struct [[nodiscard]] subscribe_connection : meta::immovable {
     constexpr subscribe_connection(SignalT signal, SlotT slot)
-        : slot_{ std::move(slot) }, connection_{ std::move(signal).subscribe(slot_) } {}
+        : slot_{ std::move(slot) }, connection_{ std::move(signal).subscribe(slot_) } {
+        slot_.setup_cancellation();
+    }
 
     // lazy construction for certain purposes
     template <std::invocable<> MakeSlotT>
     constexpr subscribe_connection(SignalT signal, MakeSlotT make_slot)
-        : slot_{ make_slot() }, connection_{ std::move(signal).subscribe(slot_) } {}
+        : slot_{ make_slot() }, connection_{ std::move(signal).subscribe(slot_) } {
+        slot_.setup_cancellation();
+    }
+
+    cancel_mixin& get_cancel_handle() & { return slot_; }
 
     void emit() && { std::move(connection_).emit(); }
-
-    cancel_mixin& cancel_handle() & { return slot_; }
 
 private:
     SlotT slot_;

@@ -172,9 +172,13 @@ struct [[nodiscard]] share_connection : meta::immovable {
         detail::share_storage_base<ValueT, ErrorT, Atomic>* storage_ptr,
         slot<ValueT, ErrorT>& slot
     )
-        : node_{ .slot = slot }, storage_ptr_{ storage_ptr } {}
+        : node_{ .slot = slot }, storage_ptr_{ storage_ptr } {
+        // implicitly not propagating cancel-s into original signal
+    }
 
     ~share_connection() { detail::share_storage_base<ValueT, ErrorT, Atomic>::try_decref(storage_ptr_); }
+
+    cancel_mixin& get_cancel_handle() & { return node_.slot; }
 
     void emit() && {
         auto* storage_ptr = std::exchange(storage_ptr_, nullptr);

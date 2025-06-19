@@ -11,6 +11,8 @@ namespace sl::exec {
 struct cancel_mixin : meta::intrusive_forward_list_node<cancel_mixin> {
     virtual ~cancel_mixin() = default;
 
+    virtual void setup_cancellation() & {}
+
     [[nodiscard]] virtual bool try_cancel() & {
         if (nullptr == intrusive_next) {
             return false;

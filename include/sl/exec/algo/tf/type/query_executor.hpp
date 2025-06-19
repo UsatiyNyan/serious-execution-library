@@ -19,9 +19,9 @@ struct query_executor_signal {
 
     struct query_executor_slot : slot<typename SignalT::value_type, typename SignalT::error_type> {
         constexpr query_executor_slot(executor& executor, slot<value_type, error_type>& slot)
-            : executor_{ executor }, slot_{ slot } {
-            slot_.intrusive_next = this;
-        }
+            : executor_{ executor }, slot_{ slot } {}
+
+        void setup_cancellation() & override { slot_.intrusive_next = this; }
 
         void set_value(typename SignalT::value_type&& value) & override {
             slot_.set_value(value_type{ executor_, std::move(value) });

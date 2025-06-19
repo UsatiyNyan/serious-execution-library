@@ -15,6 +15,8 @@ struct [[nodiscard]] schedule_connection : task_node {
     constexpr schedule_connection(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
         : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
 
+    cancel_mixin& get_cancel_handle() & { return slot_; }
+
     void emit() && noexcept { executor_.schedule(this); }
 
     void execute() noexcept override {

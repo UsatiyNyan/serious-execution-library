@@ -20,6 +20,8 @@ struct [[nodiscard]] result_connection {
     constexpr result_connection(meta::result<ValueT, ErrorT> result, slot<ValueT, ErrorT>& slot)
         : result_{ std::move(result) }, slot_{ slot } {}
 
+    cancel_mixin& get_cancel_handle() & { return slot_; }
+
     void emit() && noexcept {
         if (result_.has_value()) {
             slot_.set_value(std::move(result_).value());

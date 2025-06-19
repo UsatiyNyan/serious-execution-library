@@ -21,6 +21,8 @@ public:
     constexpr async_connection(async<ValueT> async, slot<ValueT, ErrorT>& slot, executor& executor)
         : async_{ std::move(async) }, slot_{ slot }, executor_{ executor } {}
 
+    cancel_mixin& get_cancel_handle() & { return slot_; }
+
     void emit() && noexcept { coro_schedule(executor_, make_connection_coro(std::move(async_), slot_)); }
 
 private:

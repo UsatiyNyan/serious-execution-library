@@ -17,8 +17,12 @@ template <typename ValueT, typename ErrorT>
 struct box_storage_base {
     virtual ~box_storage_base() = default;
 
+    // Signal
     virtual void subscribe(slot<ValueT, ErrorT>&) & = 0;
     virtual executor& get_executor() & = 0;
+
+    // Connection
+    virtual cancel_mixin& get_cancel_handle() & = 0;
     virtual void emit() && = 0;
 };
 
@@ -29,10 +33,17 @@ template <
 struct box_storage final : box_storage_base<ValueT, ErrorT> {
     constexpr explicit box_storage(SignalT&& signal) : signal_{ std::move(signal) } {}
 
+    // Signal
     void subscribe(slot<ValueT, ErrorT>& slot) & override {
         maybe_connection_.emplace(meta::lazy_eval{ [&] { return std::move(signal_).subscribe(slot); } });
     }
     executor& get_executor() & override { return signal_.get_executor(); }
+
+    // Connection
+    cancel_mixin& get_cancel_handle() & override {
+        DEBUG_ASSERT(maybe_connection_.has_value());
+        return maybe_connection_.value().get_cancel_handle();
+    }
     void emit() && override {
         DEBUG_ASSERT(maybe_connection_.has_value());
         std::move(maybe_connection_).value().emit();
@@ -51,6 +62,8 @@ struct [[nodiscard]] box_connection {
         : storage_{ std::move(storage) } {
         storage_->subscribe(slot);
     }
+
+    cancel_mixin& get_cancel_handle() & { return storage_->get_cancel_handle(); }
 
     void emit() && {
         detail::box_storage_base<ValueT, ErrorT>& storage = *storage_;

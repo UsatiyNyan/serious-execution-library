@@ -33,9 +33,9 @@ struct [[nodiscard]] map_error_slot : slot<ValueT, InputErrorT> {
     };
 
     map_error_slot(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
-        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {
-        slot_.intrusive_next = this;
-    }
+        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
+
+    void setup_cancellation() & override { slot_.intrusive_next = this; }
 
     void set_value(ValueT&& value) & override { slot_.set_value(std::move(value)); }
     void set_error(InputErrorT&& error) & override {

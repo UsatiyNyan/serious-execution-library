@@ -84,7 +84,7 @@ async<...> coro(T x);
 
 # TODO
 
-- [ ] bottom-up cancellation
+- [ ] channel
 - [ ] thread::pool::distributed
 - [ ] TESTS
 - [ ] require noexcept from all slot-s
