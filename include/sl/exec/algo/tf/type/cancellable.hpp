@@ -22,9 +22,7 @@ struct cancellable_slot : slot<ValueT, ErrorT> {
     };
 
 public:
-    explicit cancellable_slot(slot<ValueT, ErrorT>& slot) : slot_{ slot } {}
-
-    void setup_cancellation() & override { slot_.intrusive_next = this; }
+    explicit cancellable_slot(slot<ValueT, ErrorT>& slot) : slot_{ slot } { slot_.intrusive_next = this; }
 
     void set_value(ValueT&& value) & override {
         if (try_fulfill()) {
@@ -66,14 +64,15 @@ template <SomeSignal SignalT, template <typename> typename Atomic>
 struct [[nodiscard]] cancellable_signal {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
+    using slot_type = cancellable_slot<value_type, error_type, Atomic>;
 
 public:
     constexpr explicit cancellable_signal(SignalT&& signal) : signal_{ std::move(signal) } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
-        return subscribe_connection<SignalT, cancellable_slot<value_type, error_type, Atomic>>{
+        return subscribe_connection<SignalT, slot_type>{
             std::move(signal_),
-            [&slot] { return cancellable_slot<value_type, error_type, Atomic>{ slot }; },
+            [&slot] { return slot_type{ slot }; },
         };
     }
 
@@ -88,9 +87,7 @@ struct [[nodiscard]] cancellable {
 
     template <SomeSignal SignalT>
     constexpr Signal<typename SignalT::value_type, typename SignalT::error_type> auto operator()(SignalT&& signal) && {
-        return cancellable_signal<SignalT, Atomic>{
-            /* .signal = */ std::move(signal),
-        };
+        return cancellable_signal<SignalT, Atomic>{ std::move(signal) };
     }
 };
 

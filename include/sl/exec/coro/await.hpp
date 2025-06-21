@@ -57,9 +57,8 @@ template <SomeSignal SignalT>
 struct signal_awaiter {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
-
-private:
-    using connection_type = subscribe_connection<SignalT, awaiter_slot<value_type, error_type>>;
+    using slot_type = awaiter_slot<value_type, error_type>;
+    using connection_type = subscribe_connection<SignalT, slot_type>;
 
 public:
     explicit signal_awaiter(SignalT&& signal) : state_{ std::in_place_type<SignalT>, std::move(signal) } {}
@@ -69,13 +68,9 @@ public:
         DEBUG_ASSERT(std::holds_alternative<SignalT>(state_));
         auto signal = std::get<SignalT>(std::move(state_));
         auto& executor = signal.get_executor();
-        auto& connection = state_.template emplace<connection_type>(
-            /* .signal = */ std::move(signal),
-            /* .slot = */ awaiter_slot<value_type, error_type>{
-                /* .handle = */ std::move(handle),
-                /* .maybe_result = */ maybe_result_,
-                /* .executor = */ executor,
-            }
+        auto& connection = state_.template emplace<connection_type>( //
+            std::move(signal),
+            [&] { return slot_type{ std::move(handle), maybe_result_, executor }; }
         );
         std::move(connection).emit();
     }

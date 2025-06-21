@@ -21,9 +21,7 @@ namespace sl::exec {
 namespace detail {
 
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic, SomeSignal... SignalTs>
-struct all_connection
-    : cancel_mixin
-    , meta::immovable {
+struct all_connection : cancel_mixin {
 private:
     template <std::size_t Index, typename ElementValueT>
     struct all_slot : slot<ElementValueT, ErrorT> {
@@ -51,9 +49,9 @@ private:
 
     template <std::size_t... Indexes>
     static connections_type
-        make_connections(all_connection& self, std::tuple<SignalTs...> signals, std::index_sequence<Indexes...>) {
+        make_connections(all_connection& self, std::tuple<SignalTs...>&& signals, std::index_sequence<Indexes...>) {
         return std::make_tuple(meta::lazy_eval{ [signal = std::move(std::get<Indexes>(signals)), &self]() mutable {
-            return subscribe_connection{ std::move(signal), slot_type<Indexes>{ self } };
+            return connection_type<Indexes>{ std::move(signal), [&] { return slot_type<Indexes>{ self }; } };
         } }...);
     }
 
@@ -66,9 +64,11 @@ private:
     }
 
 public:
-    all_connection(std::tuple<SignalTs...> signals, slot<ValueT, ErrorT>& slot)
+    all_connection(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
         : connections_{ make_connections(*this, std::move(signals), std::make_index_sequence<signals_count>()) },
-          cancel_handles_{ make_cancel_handles(connections_) }, slot_{ slot } {}
+          cancel_handles_{ make_cancel_handles(connections_) }, slot_{ slot } {
+        slot_.intrusive_next = this;
+    }
 
     // Connection
     cancel_mixin& get_cancel_handle() & {
@@ -80,7 +80,6 @@ public:
     };
 
     // cancel_mixin
-    void setup_cancellation() & override { slot_.intrusive_next = this; }
     bool try_cancel() & override {
         if (done_.exchange(true, std::memory_order::acq_rel)) {
             return false;
@@ -189,13 +188,11 @@ private:
 
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic, SomeSignal... SignalTs>
 struct all_connection_box {
-    all_connection_box(std::tuple<SignalTs...> signals, slot<ValueT, ErrorT>& slot)
-        : connection_{ std::make_unique<all_connection<ValueT, ErrorT, Atomic, SignalTs...>>(
-              /* .signals = */ std::move(signals),
-              /* .slot = */ slot
-          ) } {
-        connection_->setup_cancellation();
-    }
+    using connection_type = all_connection<ValueT, ErrorT, Atomic, SignalTs...>;
+
+public:
+    all_connection_box(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
+        : connection_{ std::make_unique<connection_type>(std::move(signals), slot) } {}
 
     cancel_mixin& get_cancel_handle() & {
         ASSERT(connection_);
@@ -208,7 +205,7 @@ struct all_connection_box {
     }
 
 private:
-    std::unique_ptr<all_connection<ValueT, ErrorT, Atomic, SignalTs...>> connection_;
+    std::unique_ptr<connection_type> connection_;
 };
 
 template <template <typename> typename Atomic, SomeSignal... SignalTs>
@@ -217,7 +214,8 @@ struct [[nodiscard]] all_signal {
     using value_type = std::tuple<typename SignalTs::value_type...>;
     using error_type = meta::type::head_t<typename SignalTs::error_type...>;
 
-    explicit all_signal(SignalTs... signals) : signals_{ std::move(signals)... } {}
+public:
+    explicit all_signal(SignalTs&&... signals) : signals_{ std::move(signals)... } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
         return all_connection_box<value_type, error_type, Atomic, SignalTs...>{ std::move(signals_), slot };

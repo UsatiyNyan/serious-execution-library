@@ -17,9 +17,7 @@ namespace detail {
 
 template <typename SignalValueT, typename ValueT, typename ErrorT>
 struct [[nodiscard]] flatten_slot : slot<SignalValueT, ErrorT> {
-    constexpr explicit flatten_slot(slot<ValueT, ErrorT>& slot) : slot_{ slot } {}
-
-    void setup_cancellation() & override { slot_.intrusive_next = this; }
+    constexpr explicit flatten_slot(slot<ValueT, ErrorT>& slot) : slot_{ slot } { slot_.intrusive_next = this; }
 
     void set_value(SignalValueT&& value) & override {
         Connection auto& connection =
@@ -41,14 +39,13 @@ struct [[nodiscard]] flatten_signal {
     using error_type = typename SignalT::error_type;
 
 public:
-    constexpr explicit flatten_signal(SignalT signal) : signal_{ std::move(signal) } {}
+    constexpr explicit flatten_signal(SignalT&& signal) : signal_{ std::move(signal) } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
         using slot_type = flatten_slot<SignalValueT, value_type, error_type>;
         return subscribe_connection<SignalT, slot_type>{
-            /* .signal = */ std::move(signal_),
-            /* .slot = */
-            [&slot] { return slot_type{ /* .slot = */ slot }; },
+            std::move(signal_),
+            [&slot] { return slot_type{ slot }; },
         };
     }
 

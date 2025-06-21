@@ -51,9 +51,7 @@ private:
 } // namespace detail
 
 template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] promise
-    : slot<ValueT, ErrorT>
-    , meta::finalizer<promise<ValueT, ErrorT>> {
+struct [[nodiscard]] promise : meta::finalizer<promise<ValueT, ErrorT>> {
     explicit promise(slot<ValueT, ErrorT>* slot)
         : meta::finalizer<promise>{ [](promise& self) {
               if (auto* const slot = std::exchange(self.slot_, nullptr); slot != nullptr) {
@@ -64,19 +62,19 @@ struct [[nodiscard]] promise
         DEBUG_ASSERT(slot_ != nullptr);
     }
 
-    void set_value(ValueT&& value) & override {
+    void set_value(ValueT&& value) & {
         auto* const slot = std::exchange(slot_, nullptr);
         if (ASSUME_VAL(slot != nullptr)) {
             slot->set_value(std::move(value));
         }
     }
-    void set_error(ErrorT&& error) & override {
+    void set_error(ErrorT&& error) & {
         auto* const slot = std::exchange(slot_, nullptr);
         if (ASSUME_VAL(slot != nullptr)) {
             slot->set_error(std::move(error));
         }
     }
-    void set_null() & override {
+    void set_null() & {
         auto* const slot = std::exchange(slot_, nullptr);
         if (ASSUME_VAL(slot != nullptr)) {
             slot->set_null();

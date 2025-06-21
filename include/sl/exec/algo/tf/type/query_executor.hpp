@@ -19,9 +19,9 @@ struct query_executor_signal {
 
     struct query_executor_slot : slot<typename SignalT::value_type, typename SignalT::error_type> {
         constexpr query_executor_slot(executor& executor, slot<value_type, error_type>& slot)
-            : executor_{ executor }, slot_{ slot } {}
-
-        void setup_cancellation() & override { slot_.intrusive_next = this; }
+            : executor_{ executor }, slot_{ slot } {
+            slot_.intrusive_next = this;
+        }
 
         void set_value(typename SignalT::value_type&& value) & override {
             slot_.set_value(value_type{ executor_, std::move(value) });
@@ -37,17 +37,13 @@ struct query_executor_signal {
     };
 
 public:
-    constexpr explicit query_executor_signal(SignalT signal) : signal_{ std::move(signal) } {}
+    constexpr explicit query_executor_signal(SignalT&& signal) : signal_{ std::move(signal) } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
         executor& executor = signal_.get_executor();
-        return subscribe_connection{
-            /* .signal = */ std::move(signal_),
-            /* .slot = */
-            query_executor_slot{
-                /* .executor = */ executor,
-                /* .slot = */ slot,
-            },
+        return subscribe_connection<SignalT, query_executor_slot>{
+            std::move(signal_),
+            [&] { return query_executor_slot{ executor, slot }; },
         };
     }
 

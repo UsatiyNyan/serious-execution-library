@@ -157,7 +157,7 @@ struct [[nodiscard]] share_storage final : share_storage_base<ValueT, ErrorT, At
 
 public:
     constexpr share_storage(SignalT&& signal, std::uint32_t refcount)
-        : base_type{ refcount }, connection_{ std::move(signal), slot_type{ *this } } {}
+        : base_type{ refcount }, connection_{ std::move(signal), [this] { return slot_type{ *this }; } } {}
 
 protected:
     void internal_connection_emit() & override { std::move(connection_).emit(); }
@@ -230,7 +230,7 @@ struct [[nodiscard]] share_box : meta::finalizer<share_box<ValueT, ErrorT, Atomi
     constexpr explicit share_box(SignalT&& signal)
         : meta::finalizer<share_box>{ [](share_box& self) { self.storage_ptr_->decref(); } },
           storage_ptr_{ new detail::share_storage<SignalT, Atomic>{
-              /* .signal = */ std::move(signal),
+              std::move(signal),
               /* .refcount = */ 1u,
           } } {}
 

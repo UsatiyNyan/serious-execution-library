@@ -419,13 +419,20 @@ TEST(algo, cancellableSimple) {
 
     {
         bool done = false;
-        auto connection = value_as_signal(meta::unit{}) | cancellable() | map([&done](meta::unit) {
-                              done = true;
-                              PANIC("should not be executed");
-                              return meta::unit{};
-                          })
+        auto connection = value_as_signal(meta::unit{}) //
+                          | and_then([](meta::unit) { return meta::ok(meta::unit{}); }) //
+                          | cancellable() //
+                          | map([&done](meta::unit) {
+                                done = true;
+                                PANIC("should not be executed");
+                                return meta::unit{};
+                            })
                           | subscribe();
         auto& cancel_handle = connection.get_cancel_handle();
+        ASSERT_TRUE(cancel_handle.intrusive_next);
+        ASSERT_TRUE(cancel_handle.intrusive_next->intrusive_next);
+        ASSERT_TRUE(cancel_handle.intrusive_next->intrusive_next->intrusive_next);
+        EXPECT_FALSE(cancel_handle.intrusive_next->intrusive_next->intrusive_next->intrusive_next);
         EXPECT_TRUE(cancel_handle.try_cancel());
 
         std::move(connection).emit();

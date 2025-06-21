@@ -35,9 +35,7 @@ struct pipe_storage {
         bool is_out() const& { return get_tag() == tag::out; }
     };
 
-    struct [[nodiscard]] in_type final
-        : pipe_state
-        , meta::immovable {
+    struct [[nodiscard]] in_type final : pipe_state {
         pipe_state::tag get_tag() const& override { return pipe_state::tag::in; }
 
     public:
@@ -58,7 +56,6 @@ struct pipe_storage {
         void emit() && { storage_.emit_in(*this); }
 
         // cancel_mixin
-        void setup_cancellation() & override { ASSERT(in_slot_.intrusive_next == this); }
         bool try_cancel() & override { return storage_.unemit_in(*this); }
 
         void fulfill(slot<ValueT, ErrorT>& out_slot) noexcept {
@@ -72,9 +69,7 @@ struct pipe_storage {
         slot<meta::unit, meta::undefined>& in_slot_;
     };
 
-    struct [[nodiscard]] out_type final
-        : pipe_state
-        , meta::immovable {
+    struct [[nodiscard]] out_type final : pipe_state {
         pipe_state::tag get_tag() const& override { return pipe_state::tag::out; }
 
     public:
@@ -90,7 +85,6 @@ struct pipe_storage {
         void emit() && { storage_.subscribe_out(*this); }
 
         // cancel_mixin
-        void setup_cancellation() & override { ASSERT(out_slot_.intrusive_next == this); }
         bool try_cancel() & override { return storage_.unsubscribe_out(*this); }
 
         slot<ValueT, ErrorT>& get_slot() const& { return out_slot_; }

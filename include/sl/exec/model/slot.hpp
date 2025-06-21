@@ -5,13 +5,12 @@
 #pragma once
 
 #include <sl/meta/intrusive/forward_list.hpp>
+#include <sl/meta/traits/unique.hpp>
 
 namespace sl::exec {
 
-struct cancel_mixin : meta::intrusive_forward_list_node<cancel_mixin> {
+struct cancel_mixin : meta::immovable, meta::intrusive_forward_list_node<cancel_mixin> {
     virtual ~cancel_mixin() = default;
-
-    virtual void setup_cancellation() & {}
 
     [[nodiscard]] virtual bool try_cancel() & {
         if (nullptr == intrusive_next) {

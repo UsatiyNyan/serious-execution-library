@@ -37,9 +37,9 @@ struct [[nodiscard]] or_else_slot : slot<ValueT, InputErrorT> {
     };
 
     or_else_slot(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
-        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
-
-    void setup_cancellation() & override { slot_.intrusive_next = this; }
+        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {
+        slot_.intrusive_next = this;
+    }
 
     void set_value(ValueT&& value) & override { slot_.set_value(std::move(value)); }
     void set_error(InputErrorT&& error) & override {
@@ -62,45 +62,44 @@ template <SomeSignal SignalT, typename F, typename ResultT = std::invoke_result_
 struct [[nodiscard]] or_else_signal {
     using value_type = typename ResultT::value_type;
     using error_type = typename ResultT::error_type;
+    using slot_type = or_else_slot<value_type, typename SignalT::error_type, error_type, F>;
 
-    SignalT signal;
-    F functor;
+public:
+    constexpr or_else_signal(SignalT&& signal, F&& functor)
+        : signal_{ std::move(signal) }, functor_{ std::move(functor) } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
-        executor& executor = signal.get_executor();
-        return subscribe_connection{
-            /* .signal = */ std::move(signal),
-            /* .slot = */
-            or_else_slot<value_type, typename SignalT::error_type, error_type, F>{
-                /* .functor = */ std::move(functor),
-                /* .slot = */ slot,
-                /* .executor = */ executor,
-            },
+        executor& executor = signal_.get_executor();
+        return subscribe_connection<SignalT, slot_type>{
+            std::move(signal_),
+            [&] { return slot_type{ std::move(functor_), slot, executor }; },
         };
     }
+    executor& get_executor() { return signal_.get_executor(); }
 
-    executor& get_executor() { return signal.get_executor(); }
+private:
+    SignalT signal_;
+    F functor_;
 };
 
 template <typename F>
 struct [[nodiscard]] or_else {
-    F functor;
+    constexpr explicit or_else(F&& functor) : functor_{ std::move(functor) } {}
 
     template <SomeSignal SignalT>
     constexpr SomeSignal auto operator()(SignalT&& signal) && {
-        return or_else_signal<SignalT, F>{
-            .signal = std::move(signal),
-            .functor = std::move(functor),
-        };
+        return or_else_signal<SignalT, F>{ std::move(signal), std::move(functor_) };
     }
+
+private:
+    F functor_;
 };
 
 } // namespace detail
 
-template <typename FV>
-constexpr auto or_else(FV&& functor) {
-    using F = std::decay_t<FV>;
-    return detail::or_else<F>{ .functor = std::forward<FV>(functor) };
+template <typename F>
+constexpr auto or_else(F functor) {
+    return detail::or_else<F>{ std::move(functor) };
 }
 
 } // namespace sl::exec

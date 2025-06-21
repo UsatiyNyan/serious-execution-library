@@ -33,9 +33,9 @@ struct [[nodiscard]] map_error_slot : slot<ValueT, InputErrorT> {
     };
 
     map_error_slot(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
-        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
-
-    void setup_cancellation() & override { slot_.intrusive_next = this; }
+        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {
+        slot_.intrusive_next = this;
+    }
 
     void set_value(ValueT&& value) & override { slot_.set_value(std::move(value)); }
     void set_error(InputErrorT&& error) & override {
@@ -57,45 +57,45 @@ template <SomeSignal SignalT, typename F>
 struct [[nodiscard]] map_error_signal {
     using value_type = typename SignalT::value_type;
     using error_type = std::invoke_result_t<F, typename SignalT::error_type>;
+    using slot_type = map_error_slot<value_type, typename SignalT::error_type, error_type, F>;
 
-    SignalT signal;
-    F functor;
+public:
+    constexpr map_error_signal(SignalT&& signal, F&& functor)
+        : signal_{ std::move(signal) }, functor_{ std::move(functor) } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
-        executor& executor = signal.get_executor();
-        return subscribe_connection{
-            /* .signal = */ std::move(signal),
-            /* .slot = */
-            map_error_slot<value_type, typename SignalT::error_type, error_type, F>{
-                /* .functor = */ std::move(functor),
-                /* .slot = */ slot,
-                /* .executor = */ executor,
-            },
+        executor& executor = signal_.get_executor();
+        return subscribe_connection<SignalT, slot_type>{
+            std::move(signal_),
+            [&] { return slot_type{ std::move(functor_), slot, executor }; },
         };
     }
 
-    executor& get_executor() { return signal.get_executor(); }
+    executor& get_executor() { return signal_.get_executor(); }
+
+private:
+    SignalT signal_;
+    F functor_;
 };
 
 template <typename F>
 struct [[nodiscard]] map_error {
-    F functor;
+    constexpr explicit map_error(F&& functor) : functor_{ std::move(functor) } {}
 
     template <SomeSignal SignalT>
     constexpr SomeSignal auto operator()(SignalT&& signal) && {
-        return map_error_signal<SignalT, F>{
-            .signal = std::move(signal),
-            .functor = std::move(functor),
-        };
+        return map_error_signal<SignalT, F>{ std::move(signal), std::move(functor_) };
     }
+
+private:
+    F functor_;
 };
 
 } // namespace detail
 
-template <typename FV>
-constexpr auto map_error(FV&& functor) {
-    using F = std::decay_t<FV>;
-    return detail::map_error<F>{ .functor = std::forward<FV>(functor) };
+template <typename F>
+constexpr auto map_error(F functor) {
+    return detail::map_error<F>{ std::move(functor) };
 }
 
 } // namespace sl::exec

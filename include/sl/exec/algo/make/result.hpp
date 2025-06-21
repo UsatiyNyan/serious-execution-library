@@ -44,10 +44,7 @@ public:
     constexpr explicit result_signal(meta::result<value_type, error_type> result) : result_{ std::move(result) } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
-        return result_connection<value_type, error_type>{
-            /* .result = */ std::move(result_),
-            /* .slot = */ slot,
-        };
+        return result_connection<value_type, error_type>{ std::move(result_), slot };
     }
 
     executor& get_executor() { return exec::inline_executor(); }
@@ -60,7 +57,7 @@ template <typename ValueT, typename ErrorT>
 struct as_signal<meta::result<ValueT, ErrorT>> {
     template <typename ResultTV>
     constexpr static Signal<ValueT, ErrorT> auto call(ResultTV&& result) {
-        return result_signal<ValueT, ErrorT>{ /* .result = */ std::forward<ResultTV>(result) };
+        return result_signal<ValueT, ErrorT>{ std::forward<ResultTV>(result) };
     }
 };
 

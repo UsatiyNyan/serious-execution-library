@@ -41,7 +41,8 @@ struct [[nodiscard]] force_storage {
     };
 
 public:
-    explicit force_storage(SignalT&& signal) : connection_{ std::move(signal), force_slot{ *this } } {
+    explicit force_storage(SignalT&& signal)
+        : connection_{ std::move(signal), [this] { return force_slot{ *this }; } } {
         std::move(connection_).emit();
     }
 
@@ -93,7 +94,6 @@ struct force_connection {
 public:
     force_connection(force_storage<SignalT, Atomic>& storage, slot<value_type, error_type>& slot)
         : storage_{ storage }, slot_{ slot } {
-        // this is here, since force_slot::setup_cancellation happens before force_connection is created
         slot.intrusive_next = &storage_.get_cancel_handle();
     }
 
