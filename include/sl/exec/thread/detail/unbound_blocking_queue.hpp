@@ -4,16 +4,16 @@
 
 #pragma once
 
+#include "sl/exec/thread/detail/condition_variable.hpp"
+#include "sl/exec/thread/detail/mutex.hpp"
+
 #include <sl/meta/intrusive/forward_list.hpp>
 
 #include <libassert/assert.hpp>
 
-#include <condition_variable>
-#include <mutex>
-
 namespace sl::exec::detail {
 
-template <typename T>
+template <typename T, typename Mutex = detail::mutex, typename ConditionVariable = detail::condition_variable>
 class unbound_blocking_queue {
 public:
     bool push(meta::intrusive_forward_list_node<T>* node) {
@@ -47,9 +47,9 @@ public:
     }
 
 private:
-    meta::intrusive_forward_list<T> q_;
-    std::mutex m_;
-    std::condition_variable event_;
+    meta::intrusive_forward_list<T> q_{};
+    Mutex m_{};
+    ConditionVariable event_{};
     bool is_closed_ = false;
 };
 

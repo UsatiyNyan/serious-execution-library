@@ -5,11 +5,13 @@
 
 #pragma once
 
+#include <libassert/assert.hpp>
+
 namespace sl::exec {
 
 struct nowait_event {
-    void set();
-    void wait(); 
+    void set() {  is_set_ = true; }
+    void wait() {  ASSERT(is_set_); }
 
 private:
     bool is_set_ = false;

@@ -22,14 +22,15 @@ as a description of the source of asynchrony.
 
 ## thread
 
-- `detail/atomic` is an "injectable" atomic for fuzz testing and platform-specific configurations
+- `detail`
+  - `atomic`, `mutex`, `condition_variable` - injections for fuzz testing
 - `event`-s are different types of sync primitives for one-shot calculations (use `default_event` if confused)
 - `sync` - thread-synchronization primitives
 - `pool/monolithic` is a simple "queue under mutex" implementation of `executor`
 
 ## algo
 
-- `make` - the beginning of execution pipeline:
+- `make` - the beginning of execution pipeline
   - `result` - starts asynchrony from *just* a value, the simplest entrance into `signal` monad
   - `contract` - classic pair of `future ~ eager signal` and `promise ~ slot`, is one-shot
   - `pipe` - SPSC pseudo-blocking channel, restrictive, but fast for 1-to-1 communication
