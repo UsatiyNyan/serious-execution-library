@@ -3,8 +3,10 @@
 //
 
 #include "sl/exec/algo.hpp"
+#include "sl/exec/algo/sched/manual.hpp"
 #include "sl/exec/model.hpp"
 #include "sl/exec/thread/event.hpp"
+#include "sl/exec/thread/event/nowait.hpp"
 
 #include <gtest/gtest.h>
 
@@ -604,5 +606,149 @@ TEST(algo, cancellablePipeAny) {
 }
 
 // TEST(algo, cancellablePipeCombinatorsCancelled) {}
+
+TEST(algo, channelSimple) {
+    auto channel = make_channel<int>();
+
+    std::size_t counter = 0;
+    const auto increment = [&](int value) {
+        ++counter;
+        return value;
+    };
+
+    channel->send(42) | detach();
+
+    {
+        const auto result = channel->receive() | map(increment) | get<nowait_event>();
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result.value(), 42);
+        EXPECT_EQ(counter, 1);
+    }
+
+    channel->receive() | map(increment) | detach();
+    EXPECT_EQ(counter, 1);
+    channel->send(69) | detach();
+    EXPECT_EQ(counter, 2);
+
+    for (int i = 3; i < 10; ++i) {
+        channel->send(int{ i }) | detach();
+    }
+    EXPECT_EQ(counter, 2);
+
+    for (int i = 3; i < 10; ++i) {
+        const auto result = channel->receive() | map(increment) | get<nowait_event>();
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result.value(), i);
+        EXPECT_EQ(counter, i);
+    }
+}
+
+TEST(algo, selectAsAny) {
+    manual_executor executor;
+    std::size_t counter1 = 0;
+    std::size_t counter2 = 0;
+    std::size_t counter3 = 0;
+    auto s1 = as_signal(meta::result<int, meta::undefined>{ 69 });
+    auto s2 = start_on(executor) | map([](meta::unit) { return std::string{ "42" }; });
+    auto s3 = as_signal(meta::result<int, meta::undefined>{ 72 });
+    auto maybe_result = select()
+                            .case_(
+                                std::move(s1),
+                                [&counter1](int value) {
+                                    ++counter1;
+                                    return std::to_string(value);
+                                }
+                            )
+                            .case_(
+                                std::move(s2),
+                                [&counter2](auto value) {
+                                    ++counter2;
+                                    return value;
+                                }
+                            )
+                            .case_(
+                                std::move(s3),
+                                [&counter3](int value) {
+                                    ++counter3;
+                                    return std::to_string(value);
+                                }
+                            )
+                        | get<nowait_event>();
+    EXPECT_EQ(maybe_result->value(), "69");
+    EXPECT_EQ(counter1, 1);
+    EXPECT_EQ(counter2, 0);
+    EXPECT_EQ(counter3, 0);
+
+    executor.execute_batch();
+    EXPECT_EQ(counter1, 1);
+    EXPECT_EQ(counter2, 0);
+    EXPECT_EQ(counter3, 0);
+}
+
+TEST(algo, selectChannel) {
+    std::size_t counter1 = 0;
+    std::size_t counter2 = 0;
+    std::size_t counter3 = 0;
+    auto channel1 = make_channel<int>();
+    auto channel2 = make_channel<std::string>();
+    auto channel3 = make_channel<double>();
+    select() //
+            .case_(
+                channel1->send(42),
+                [&counter1](meta::unit) {
+                    ++counter1;
+                    return meta::unit{};
+                }
+            )
+            .case_(
+                channel2->receive(),
+                [&counter2](std::string) {
+                    ++counter2;
+                    return meta::unit{};
+                }
+            )
+            .case_(
+                channel3->send(4.0),
+                [&counter3](meta::unit) {
+                    ++counter3;
+                    return meta::unit{};
+                }
+            )
+        | detach();
+    EXPECT_EQ(counter1, 0);
+    EXPECT_EQ(counter2, 0);
+    EXPECT_EQ(counter3, 0);
+
+    const auto c2_send_result = channel2->send("hehe") | get<nowait_event>();
+    EXPECT_TRUE(c2_send_result.has_value());
+    EXPECT_TRUE(c2_send_result->has_value());
+    EXPECT_EQ(counter1, 0);
+    EXPECT_EQ(counter2, 1);
+    EXPECT_EQ(counter3, 0);
+
+    channel2->send("hehe") | map([&counter2](meta::unit) {
+        ++counter2;
+        return meta::unit{};
+    }) | detach();
+    EXPECT_EQ(counter1, 0);
+    EXPECT_EQ(counter2, 1);
+    EXPECT_EQ(counter3, 0);
+
+    channel1->receive() | map([&counter1](int) {
+        ++counter1;
+        return meta::unit{};
+    }) | detach();
+    EXPECT_EQ(counter1, 0);
+    EXPECT_EQ(counter2, 1);
+    EXPECT_EQ(counter3, 0);
+
+    channel3->receive() | map([&counter3](double) {
+        ++counter3;
+        return meta::unit{};
+    }) | detach();
+    EXPECT_EQ(counter1, 0);
+    EXPECT_EQ(counter2, 1);
+    EXPECT_EQ(counter3, 0);
+}
 
 } // namespace sl::exec
