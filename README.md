@@ -87,10 +87,11 @@ async<...> coro(T x);
 
 # TODO
 
+- [ ] channel
+  - [ ] select
 - [ ] slots:
   - [ ] noexcept
   - [ ] set_result(...) -> bool
-- [ ] channel
 - [ ] thread::pool::distributed
 - [ ] TESTS
 
