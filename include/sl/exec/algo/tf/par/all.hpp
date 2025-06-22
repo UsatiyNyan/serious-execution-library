@@ -70,7 +70,7 @@ public:
         slot_.intrusive_next = this;
     }
 
-    // Connection
+public: // Connection
     cancel_mixin& get_cancel_handle() & {
         ASSERT(slot_.intrusive_next == this);
         return slot_;
@@ -79,7 +79,7 @@ public:
         meta::for_each([](Connection auto&& connection) { std::move(connection).emit(); }, std::move(connections_));
     };
 
-    // cancel_mixin
+public: // cancel_mixin
     bool try_cancel() & override {
         if (done_.exchange(true, std::memory_order::acq_rel)) {
             return false;

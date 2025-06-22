@@ -565,4 +565,9 @@ TEST(algo, cancellablePipeAll) {
 
 // TEST(algo, cancellablePipeCombinatorsCancelled) {}
 
+// TEST(algo, channelSimple) {
+//     auto channel = make_channel<int, std::string>();
+//
+// }
+
 } // namespace sl::exec
