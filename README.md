@@ -24,6 +24,7 @@ as a description of the source of asynchrony.
 
 - `detail`
   - `atomic`, `mutex`, `condition_variable` - injections for fuzz testing
+  - `tagged_ptr` - tag pointers in lower bits
 - `event`-s are different types of sync primitives for one-shot calculations (use `default_event` if confused)
 - `sync` - thread-synchronization primitives
 - `pool/monolithic` is a simple "queue under mutex" implementation of `executor`
