@@ -25,6 +25,7 @@ as a description of the source of asynchrony.
 - `detail`
   - `atomic`, `mutex`, `condition_variable` - injections for fuzz testing
   - `tagged_ptr` - tag pointers in lower bits
+  - `multiword` - primitives for multiword atomic operations
 - `event`-s are different types of sync primitives for one-shot calculations (use `default_event` if confused)
 - `sync` - thread-synchronization primitives
 - `pool/monolithic` is a simple "queue under mutex" implementation of `executor`
@@ -93,5 +94,6 @@ async<...> coro(T x);
   - [ ] set_result(...) -> bool
 - [ ] channel
 - [ ] thread::pool::distributed
+- [ ] injectable thread-local storage for "pseudo-threads"
 - [ ] TESTS
 
