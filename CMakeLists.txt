@@ -30,6 +30,10 @@ target_include_directories(${PROJECT_NAME} PUBLIC include)
 
 add_subdirectory(dependencies)
 
+# multiword configuration
+set(SL_EXEC_MW_MAX_THREADS_DEFAULT 256 CACHE STRING "Max count of threads for multiword operations")
+target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_MW_MAX_THREADS_DEFAULT=${SL_EXEC_MW_MAX_THREADS_DEFAULT}")
+
 if (NOT PROJECT_IS_TOP_LEVEL)
     return()
 endif ()
