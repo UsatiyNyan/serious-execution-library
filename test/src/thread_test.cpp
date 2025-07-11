@@ -6,6 +6,7 @@
 #include "sl/exec/model.hpp"
 #include "sl/exec/thread.hpp"
 #include "sl/exec/thread/detail/multiword.hpp"
+#include "sl/exec/thread/detail/multiword_dcss.hpp"
 #include "sl/exec/thread/detail/tagged_ptr.hpp"
 
 #include <gtest/gtest.h>
@@ -273,6 +274,68 @@ TEST(threadDetailMultiwordPointer, allOnesMaskedProperly) {
     ASSERT_EQ(flag, traits::flag_mask);
     ASSERT_EQ(pid, traits::pid_mask);
     ASSERT_EQ(seq, traits::sequence_mask);
+}
+
+TEST(threadDetailMultiwordDcss, succeedsWhenBothExpectedMatch) {
+    atomic<std::uintptr_t> a1{ 0x1111 };
+    atomic<std::uintptr_t> a2{ 0x2222 };
+
+    const std::uintptr_t result = dcss(&a1, 0x1111, &a2, 0x2222, 0xDEAD);
+
+    ASSERT_EQ(result, 0x2222); // returns old a2
+    ASSERT_EQ(a2.load(), 0xDEAD); // a2 is updated
+}
+
+TEST(threadDetailMultiwordDcss, failsWhenA1DoesNotMatch) {
+    atomic<std::uintptr_t> a1{ 0xAAAA }; // != e1
+    atomic<std::uintptr_t> a2{ 0x2222 }; // == e2
+
+    const std::uintptr_t result = dcss(&a1, 0x1111, &a2, 0x2222, 0xDEAD);
+
+    ASSERT_EQ(result, 0x2222); // returns unchanged a2
+    ASSERT_EQ(a2.load(), 0x2222); // a2 remains the same
+}
+
+TEST(threadDetailMultiwordDcss, failsWhenA2DoesNotMatch) {
+    atomic<std::uintptr_t> a1{ 0x1111 }; // == e1
+    atomic<std::uintptr_t> a2{ 0x9999 }; // != e2
+
+    const std::uintptr_t result = dcss(&a1, 0x1111, &a2, 0x2222, 0xDEAD);
+
+    ASSERT_EQ(result, 0x9999); // returns actual a2
+    ASSERT_EQ(a2.load(), 0x9999); // a2 unchanged
+}
+
+TEST(threadDetailMultiwordDcss, flagSetAndCheckConsistency) {
+    using traits = mw::pointer_traits<dcss_descriptor>;
+
+    constexpr mw::pointer_type pid = 0x1234;
+    constexpr mw::pointer_type seq = 0xBEEF;
+    constexpr mw::pointer_type base_flag = 0x0;
+
+    mw::pointer_type des = traits::combine(base_flag, pid, seq);
+    ASSERT_FALSE(dcss_check_flag(des));
+
+    mw::pointer_type flagged = dcss_set_flag(des, true);
+    ASSERT_TRUE(dcss_check_flag(flagged));
+
+    mw::pointer_type cleared = dcss_set_flag(flagged, false);
+    ASSERT_FALSE(dcss_check_flag(cleared));
+}
+
+TEST(threadDetailMultiwordDcss, descriptorInvariantPreserved) {
+    using traits = mw::pointer_traits<dcss_descriptor>;
+
+    constexpr mw::pointer_type flag = 0x5A;
+    constexpr mw::pointer_type pid = 0x4321;
+    constexpr mw::pointer_type seq = 0xCAFEBABE;
+
+    mw::pointer_type combined = traits::combine(flag, pid, seq);
+    auto [f, p, s] = traits::extract(combined);
+
+    ASSERT_EQ(f, flag & traits::flag_mask);
+    ASSERT_EQ(p, pid & traits::pid_mask);
+    ASSERT_EQ(s, seq & traits::sequence_mask);
 }
 
 } // namespace detail
