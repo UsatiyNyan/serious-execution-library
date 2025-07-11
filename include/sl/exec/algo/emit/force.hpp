@@ -11,6 +11,8 @@
 #include <sl/meta/lifetime/defer.hpp>
 #include <sl/meta/monad/maybe.hpp>
 
+#include <bit>
+
 namespace sl::exec {
 namespace detail {
 
@@ -54,7 +56,7 @@ public:
             return;
         }
         DEBUG_ASSERT(state != force_state_result);
-        auto* slot_ptr = reinterpret_cast<slot<value_type, error_type>*>(state);
+        auto* slot_ptr = std::bit_cast<slot<value_type, error_type>*>(state);
 
         meta::defer cleanup{ [this] { delete this; } };
 
@@ -65,10 +67,7 @@ public:
         std::uintptr_t expected = force_state_empty;
         if (state_.load(std::memory_order::acquire) == expected
             && state_.compare_exchange_strong(
-                expected,
-                reinterpret_cast<std::uintptr_t>(&slot),
-                std::memory_order::release,
-                std::memory_order::acquire
+                expected, std::bit_cast<std::uintptr_t>(&slot), std::memory_order::release, std::memory_order::acquire
             )) {
             return;
         }
