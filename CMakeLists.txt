@@ -21,6 +21,7 @@ project(
 add_library(${PROJECT_NAME} STATIC
     src/algo/sched/manual.cpp
     src/coro/async.cpp
+    src/thread/detail/multiword_dcss.cpp
     src/thread/pool/config.cpp
     )
 
