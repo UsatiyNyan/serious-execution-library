@@ -22,6 +22,8 @@
 #include <sl/meta/lifetime/finalizer.hpp>
 #include <sl/meta/monad/maybe.hpp>
 
+#include <bit>
+
 namespace sl::exec {
 namespace detail {
 
@@ -88,20 +90,18 @@ public: // fulfillment
     void emit(share_node<ValueT, ErrorT>& node) & {
         std::uintptr_t state = share_state_empty;
         if (state_.compare_exchange_strong(
-                state, reinterpret_cast<std::uintptr_t>(&node), std::memory_order::release, std::memory_order::acquire
+                state, std::bit_cast<std::uintptr_t>(&node), std::memory_order::release, std::memory_order::acquire
             )) {
             internal_connection_emit();
             return;
         }
 
         do {
-            node.intrusive_next = reinterpret_cast<share_node<value_type, error_type>*>(state);
-        } while (
-            state != share_state_result
-            && !state_.compare_exchange_weak(
-                state, reinterpret_cast<std::uintptr_t>(&node), std::memory_order::release, std::memory_order::acquire
-            )
-        );
+            node.intrusive_next = std::bit_cast<share_node<value_type, error_type>*>(state);
+        } while (state != share_state_result
+                 && !state_.compare_exchange_weak(
+                     state, std::bit_cast<std::uintptr_t>(&node), std::memory_order::release, std::memory_order::acquire
+                 ));
 
         if (state == share_state_result) {
             // exlicit copy, unfortunately
@@ -122,7 +122,7 @@ private:
         }
         DEBUG_ASSERT(state != share_state_result);
 
-        auto* node_list = reinterpret_cast<share_node<value_type, error_type>*>(state);
+        auto* node_list = std::bit_cast<share_node<value_type, error_type>*>(state);
 
         // if any exceptions are thrown, probably everything breaks here
         std::uint32_t slot_list_count = 0;
