@@ -9,8 +9,7 @@
 
 #include "sl/exec/thread/detail/multiword.hpp"
 
-namespace sl::exec {
-namespace detail {
+namespace sl::exec::detail {
 
 struct dcss_descriptor {
     // concept requirements
@@ -29,6 +28,9 @@ struct dcss_descriptor {
         bool operator==(const immutables_type&) const = default;
     };
 
+    // choose highest flag bit
+    static constexpr mw::pointer_type flag_bit = 1 << (mw::pointer_traits<dcss_descriptor>::flag_width - 1);
+
 public:
     detail::atomic<mw::state_type> state{ 0 };
     immutables_type immutables{};
@@ -41,15 +43,10 @@ std::uintptr_t dcss(
     std::uintptr_t e2,
     std::uintptr_t n2
 );
-
 std::uintptr_t dcss_read(detail::atomic<std::uintptr_t>* a);
-
 void dcss_help(mw::pointer_type fdes);
 
-bool dcss_check_flag(mw::pointer_type des);
-mw::pointer_type dcss_set_flag(mw::pointer_type des, bool flag_value);
-
-} // namespace detail
+// "public":
 
 // (a1, e1, a2, e2, n2)
 //   -> e2 if succeeded
@@ -67,4 +64,13 @@ T dcss(detail::atomic<T>& a1, T e1, detail::atomic<T>& a2, T e2, T n2) {
     return std::bit_cast<T>(result);
 }
 
-} // namespace sl::exec
+// (&a) -> *a
+// value of any atomic that was used in dcss should be acquired using dcss_read
+template <typename T>
+    requires(sizeof(T) == sizeof(std::uintptr_t))
+T dcss_read(detail::atomic<T>& a) {
+    const std::uintptr_t result = detail::dcss_read(std::bit_cast<detail::atomic<std::uintptr_t>*>(&a));
+    return std::bit_cast<T>(result);
+}
+
+} // namespace sl::exec::detail
