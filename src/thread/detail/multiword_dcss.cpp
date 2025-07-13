@@ -18,7 +18,8 @@ SL_EXEC_DESCRIPTOR_POOL_TEMPLATE_INSTANTIATE(dcss_descriptor)
 //   if r = e2 then DCSSHelp(f des)
 //   return r
 std::uintptr_t dcss(
-    detail::atomic<std::uintptr_t>* a1,
+    std::uintptr_t a1,
+    dcss_a1_load_type a1_load,
     std::uintptr_t e1,
     detail::atomic<std::uintptr_t>* a2,
     std::uintptr_t e2,
@@ -29,8 +30,9 @@ std::uintptr_t dcss(
         "algo wouldn't work with highest bit set in initial values"
     );
 
-    const mw::pointer_type des =
-        mw::create_new<dcss_descriptor>(mw::state_type{}, dcss_descriptor::immutables_type{ a1, e1, a2, e2, n2 });
+    const mw::pointer_type des = mw::create_new<dcss_descriptor>(
+        mw::state_type{}, dcss_descriptor::immutables_type{ a1, a1_load, e1, a2, e2, n2 }
+    );
 
     const mw::pointer_type fdes = mw::set_flag<dcss_descriptor>(des);
 
@@ -82,8 +84,8 @@ void dcss_help(mw::pointer_type fdes) {
         return;
     }
 
-    const auto [a1, e1, a2, e2, n2] = values.value();
-    if (a1->load(std::memory_order::relaxed) == e1) {
+    const auto [a1, a1_load, e1, a2, e2, n2] = values.value();
+    if (a1_load(a1) == e1) {
         a2->compare_exchange_weak(fdes, n2);
     } else {
         a2->compare_exchange_weak(fdes, e2);
