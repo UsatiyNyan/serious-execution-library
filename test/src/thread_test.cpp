@@ -7,6 +7,7 @@
 #include "sl/exec/thread.hpp"
 #include "sl/exec/thread/detail/multiword.hpp"
 #include "sl/exec/thread/detail/multiword_dcss.hpp"
+#include "sl/exec/thread/detail/multiword_kcas.hpp"
 #include "sl/exec/thread/detail/tagged_ptr.hpp"
 
 #include <gtest/gtest.h>
@@ -361,6 +362,63 @@ TEST(threadDetailMultiwordDcss, readSimple) {
 //     ASSERT_FALSE(mw::has_flag<dcss_descriptor>(result));
 //     ASSERT_EQ(result, n2);
 // }
+
+TEST(threadDetailKcas, readSimplePointer) {
+    int value = 1234;
+    detail::atomic<int*> a{ &value };
+    int* const result = kcas_read(a);
+    ASSERT_EQ(result, &value);
+    ASSERT_EQ(*result, 1234);
+}
+
+TEST(threadDetailKcas, singleSuccessfulKcas) {
+    int old_value = 1234;
+    int new_value = 4321;
+    detail::atomic<int*> a{ &old_value };
+    const bool success = kcas(kcas_arg{ a, &old_value, &new_value });
+    ASSERT_TRUE(success);
+    ASSERT_EQ(a.load(), &new_value);
+    ASSERT_EQ(4321, new_value);
+}
+
+TEST(threadDetailKcas, singleFailedKcas) {
+    int old_value = 1234;
+    int incorrect = 9999;
+    int new_value = 4321;
+    detail::atomic<int*> a{ &old_value };
+    const bool success = kcas(kcas_arg{ a, &incorrect, &new_value });
+    ASSERT_FALSE(success);
+    ASSERT_EQ(a.load(), &old_value);
+    ASSERT_EQ(1234, old_value);
+}
+
+
+TEST(threadDetailKcas, multiKcasSuccess) {
+    int a_val = 100, b_val = 200;
+    int a_new = 101, b_new = 201;
+    detail::atomic<int*> a{ &a_val };
+    detail::atomic<int*> b{ &b_val };
+    const bool success = kcas(kcas_arg{ a, &a_val, &a_new }, kcas_arg{ b, &b_val, &b_new });
+    ASSERT_TRUE(success);
+    ASSERT_EQ(a.load(), &a_new);
+    ASSERT_EQ(b.load(), &b_new);
+    ASSERT_EQ(*a.load(), 101);
+    ASSERT_EQ(*b.load(), 201);
+}
+
+TEST(threadDetailKcas, multiKcasFailure) {
+    int a_val = 300, b_val = 400;
+    int a_new = 301, b_new = 401;
+    int incorrect = 999;
+    detail::atomic<int*> a{ &a_val };
+    detail::atomic<int*> b{ &b_val };
+    const bool success = kcas(kcas_arg{ a, &a_val, &a_new }, kcas_arg{ b, &incorrect, &b_new });
+    ASSERT_FALSE(success);
+    ASSERT_EQ(a.load(), &a_val);
+    ASSERT_EQ(b.load(), &b_val);
+    ASSERT_EQ(*a.load(), 300);
+    ASSERT_EQ(*b.load(), 400);
+}
 
 } // namespace detail
 } // namespace sl::exec
