@@ -34,22 +34,10 @@ using state_type = std::uintptr_t;
 using pointer_type = std::uintptr_t;
 static constexpr std::size_t default_max_threads = SL_EXEC_MW_MAX_THREADS_DEFAULT;
 
-// Descriptor of type T :
-// mutables = <seq, mut1, mut2, ...>     |> Mutable fields (renamed to state to avoid confusion)
-// imm1, imm2, ...                       |> Immutable fields
-template <typename DT>
-concept Descriptor = requires(DT descriptor) {
-    { DT::max_threads } -> std::same_as<const pointer_type&>;
-    typename DT::template atomic_type<state_type>;
-    { descriptor.state } -> std::same_as<typename DT::template atomic_type<state_type>&>;
-    typename DT::immutables_type;
-    { descriptor.immutables } -> std::same_as<typename DT::immutables_type&>;
-};
-
 // on 64-bit system:
 // [ 63..32 | 31..0 ]
 //   mut    | seq
-template <Descriptor DT>
+template <typename DT>
 struct state_traits {
     static constexpr std::size_t state_width = sizeof(state_type) * CHAR_BIT;
     static constexpr std::size_t mutables_width = (state_width >> 1);
@@ -70,14 +58,10 @@ public:
     }
 };
 
-template <Descriptor DT, state_type FieldMask>
-static constexpr bool valid_field_mask =
-    (FieldMask != 0) && (std::bit_width(FieldMask) <= state_traits<DT>::mutables_width);
-
 // on 64-bit system:
 // [ 63..48 | 47..32 | 31..0 ]
 //   flag   | pid    | seq
-template <Descriptor DT>
+template <typename DT>
 struct pointer_traits {
     static constexpr std::size_t ptr_width = sizeof(pointer_type) * CHAR_BIT;
     static constexpr std::size_t sequence_width = (ptr_width >> 1);
@@ -108,8 +92,24 @@ public:
     }
 };
 
+// Descriptor of type T :
+// mutables = <seq, mut1, mut2, ...>     |> Mutable fields (renamed to state to avoid confusion)
+// imm1, imm2, ...                       |> Immutable fields
+template <typename DT>
+concept Descriptor = requires(DT descriptor) {
+    { DT::max_threads } -> std::same_as<const pointer_type&>;
+    typename DT::template atomic_type<state_type>;
+    { descriptor.state } -> std::same_as<typename DT::template atomic_type<state_type>&>;
+    typename DT::immutables_type;
+    { descriptor.immutables } -> std::same_as<typename DT::immutables_type&>;
+};
+
 // special type
 struct bottom {};
+
+template <Descriptor DT, state_type FieldMask>
+static constexpr bool valid_field_mask =
+    (FieldMask != 0) && (std::bit_width(FieldMask) <= state_traits<DT>::mutables_width);
 
 // D{T,p} for each descriptor type T and process p
 // immitating 'thread_local' behaviour
@@ -384,6 +384,35 @@ template <Descriptor DT, state_type FieldMask>
             return new_value;
         }
     }
+}
+
+template <typename DT>
+concept DescriptorWithFlag = Descriptor<DT> && std::has_single_bit(DT::flag_bit);
+
+template <DescriptorWithFlag DT>
+bool has_flag(mw::pointer_type des) {
+    const auto [flag, pid, seq] = pointer_traits<DT>::extract(des);
+    return (flag & DT::flag_bit) == DT::flag_bit;
+}
+
+template <DescriptorWithFlag DT>
+mw::pointer_type toggle_flag(mw::pointer_type des) {
+    using pointer_impl = pointer_traits<DT>;
+    const auto [flag, pid, seq] = pointer_impl::extract(des);
+    const mw::pointer_type new_flag = flag ^ DT::flag_bit;
+    return pointer_impl::combine(new_flag, pid, seq);
+}
+
+template <DescriptorWithFlag DT>
+mw::pointer_type set_flag(mw::pointer_type des) {
+    DEBUG_ASSERT(!has_flag<DT>(des));
+    return toggle_flag<DT>(des);
+}
+
+template <DescriptorWithFlag DT>
+mw::pointer_type unset_flag(mw::pointer_type fdes) {
+    DEBUG_ASSERT(has_flag<DT>(fdes));
+    return toggle_flag<DT>(fdes);
 }
 
 } // namespace sl::exec::detail::mw

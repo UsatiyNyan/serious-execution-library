@@ -280,7 +280,7 @@ TEST(threadDetailMultiwordDcss, succeedsWhenBothExpectedMatch) {
     atomic<std::uintptr_t> a1{ 0x1111 };
     atomic<std::uintptr_t> a2{ 0x2222 };
 
-    const std::uintptr_t result = dcss(&a1, 0x1111, &a2, 0x2222, 0xDEAD);
+    const std::uintptr_t result = dcss<std::uintptr_t>(a1, 0x1111, a2, 0x2222, 0xDEAD);
 
     ASSERT_EQ(result, 0x2222); // returns old a2
     ASSERT_EQ(a2.load(), 0xDEAD); // a2 is updated
@@ -290,7 +290,7 @@ TEST(threadDetailMultiwordDcss, failsWhenA1DoesNotMatch) {
     atomic<std::uintptr_t> a1{ 0xAAAA }; // != e1
     atomic<std::uintptr_t> a2{ 0x2222 }; // == e2
 
-    const std::uintptr_t result = dcss(&a1, 0x1111, &a2, 0x2222, 0xDEAD);
+    const std::uintptr_t result = dcss<std::uintptr_t>(a1, 0x1111, a2, 0x2222, 0xDEAD);
 
     ASSERT_EQ(result, 0x2222); // returns unchanged a2
     ASSERT_EQ(a2.load(), 0x2222); // a2 remains the same
@@ -300,7 +300,7 @@ TEST(threadDetailMultiwordDcss, failsWhenA2DoesNotMatch) {
     atomic<std::uintptr_t> a1{ 0x1111 }; // == e1
     atomic<std::uintptr_t> a2{ 0x9999 }; // != e2
 
-    const std::uintptr_t result = dcss(&a1, 0x1111, &a2, 0x2222, 0xDEAD);
+    const std::uintptr_t result = dcss<std::uintptr_t>(a1, 0x1111, a2, 0x2222, 0xDEAD);
 
     ASSERT_EQ(result, 0x9999); // returns actual a2
     ASSERT_EQ(a2.load(), 0x9999); // a2 unchanged
@@ -314,13 +314,13 @@ TEST(threadDetailMultiwordDcss, flagSetAndCheckConsistency) {
     constexpr mw::pointer_type base_flag = 0x0;
 
     mw::pointer_type des = traits::combine(base_flag, pid, seq);
-    ASSERT_FALSE(dcss_check_flag(des));
+    ASSERT_FALSE(mw::has_flag<dcss_descriptor>(des));
 
-    mw::pointer_type flagged = dcss_set_flag(des, true);
-    ASSERT_TRUE(dcss_check_flag(flagged));
+    mw::pointer_type flagged = mw::set_flag<dcss_descriptor>(des);
+    ASSERT_TRUE(mw::has_flag<dcss_descriptor>(flagged));
 
-    mw::pointer_type cleared = dcss_set_flag(flagged, false);
-    ASSERT_FALSE(dcss_check_flag(cleared));
+    mw::pointer_type cleared = mw::unset_flag<dcss_descriptor>(flagged);
+    ASSERT_FALSE(mw::has_flag<dcss_descriptor>(cleared));
 }
 
 TEST(threadDetailMultiwordDcss, descriptorInvariantPreserved) {
@@ -337,6 +337,30 @@ TEST(threadDetailMultiwordDcss, descriptorInvariantPreserved) {
     ASSERT_EQ(p, pid & traits::pid_mask);
     ASSERT_EQ(s, seq & traits::sequence_mask);
 }
+
+TEST(threadDetailMultiwordDcss, readSimple) {
+    int value = 0x4343;
+    detail::atomic<int*> ptr{ &value };
+    int* ptr_read = dcss_read<int*>(ptr);
+    ASSERT_EQ(ptr_read, &value);
+    ASSERT_EQ(*ptr_read, 0x4343);
+    ASSERT_EQ(value, 0x4343);
+}
+
+// TODO: impossible to test this because of static initialization, need fuzz-testing
+// TEST(threadDetailMultiwordDcss, readHelps) {
+//     std::uintptr_t e1{ 0xAAAA }, e2{ 0xBBBB }, n2{ 0xCCCC };
+//     detail::atomic<std::uintptr_t> a1{ e1 }, a2{ e2 };
+//
+//     const mw::pointer_type des =
+//         mw::create_new<dcss_descriptor>(mw::state_type{}, dcss_descriptor::immutables_type{ &a1, e1, &a2, e2, n2 });
+//     const mw::pointer_type fdes = mw::set_flag<dcss_descriptor>(des);
+//     a2.store(fdes, std::memory_order::relaxed);
+//
+//     const auto result = dcss_read<std::uintptr_t>(a2);
+//     ASSERT_FALSE(mw::has_flag<dcss_descriptor>(result));
+//     ASSERT_EQ(result, n2);
+// }
 
 } // namespace detail
 } // namespace sl::exec

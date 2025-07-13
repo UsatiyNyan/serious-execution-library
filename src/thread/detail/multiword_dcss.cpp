@@ -25,27 +25,19 @@ std::uintptr_t dcss(
     std::uintptr_t n2
 ) {
     DEBUG_ASSERT(
-        !dcss_check_flag(e1) && !dcss_check_flag(e2) && !dcss_check_flag(n2),
+        !mw::has_flag<dcss_descriptor>(e1) && !mw::has_flag<dcss_descriptor>(e2) && !mw::has_flag<dcss_descriptor>(n2),
         "algo wouldn't work with highest bit set in initial values"
     );
 
-    const mw::pointer_type des = mw::create_new<dcss_descriptor>(
-        mw::state_type{},
-        dcss_descriptor::immutables_type{
-            .a1 = a1,
-            .e1 = e1,
-            .a2 = a2,
-            .e2 = e2,
-            .n2 = n2,
-        }
-    );
+    const mw::pointer_type des =
+        mw::create_new<dcss_descriptor>(mw::state_type{}, dcss_descriptor::immutables_type{ a1, e1, a2, e2, n2 });
 
-    const mw::pointer_type fdes = dcss_set_flag(des, true);
+    const mw::pointer_type fdes = mw::set_flag<dcss_descriptor>(des);
 
     std::uintptr_t r{};
     while (true) {
         r = e2;
-        if (a2->compare_exchange_weak(r, fdes, std::memory_order::relaxed) || !dcss_check_flag(r)) {
+        if (a2->compare_exchange_weak(r, fdes, std::memory_order::relaxed) || !mw::has_flag<dcss_descriptor>(r)) {
             break;
         }
         dcss_help(r);
@@ -67,7 +59,7 @@ std::uintptr_t dcss(
 std::uintptr_t dcss_read(detail::atomic<std::uintptr_t>* a) {
     while (true) {
         const std::uintptr_t r = a->load(std::memory_order::relaxed);
-        if (!dcss_check_flag(r)) {
+        if (!mw::has_flag<dcss_descriptor>(r)) {
             return r;
         }
         dcss_help(r);
@@ -84,9 +76,8 @@ std::uintptr_t dcss_read(detail::atomic<std::uintptr_t>* a) {
 //   else
 //     CAS(a2, fdes, e2)
 void dcss_help(mw::pointer_type fdes) {
-    DEBUG_ASSERT(dcss_check_flag(fdes));
-
-    const auto values = mw::read_immutables<dcss_descriptor>(fdes);
+    const mw::pointer_type des = mw::unset_flag<dcss_descriptor>(fdes);
+    const auto values = mw::read_immutables<dcss_descriptor>(des);
     if (!values.has_value()) { // is bottom
         return;
     }
@@ -97,23 +88,6 @@ void dcss_help(mw::pointer_type fdes) {
     } else {
         a2->compare_exchange_weak(fdes, e2);
     }
-}
-
-// choose highest flag bit
-static constexpr mw::pointer_type dcss_flag_bit = 1 << (dcss_descriptor_pointer_traits::flag_width - 1);
-
-bool dcss_check_flag(mw::pointer_type des) {
-    const auto [flag, pid, seq] = dcss_descriptor_pointer_traits::extract(des);
-    return (flag & dcss_flag_bit) == dcss_flag_bit;
-}
-
-mw::pointer_type dcss_set_flag(mw::pointer_type des, bool flag_value) {
-    DEBUG_ASSERT(dcss_check_flag(des) == !flag_value);
-    const auto [flag, pid, seq] = dcss_descriptor_pointer_traits::extract(des);
-    const mw::pointer_type clear_flag = ~dcss_flag_bit & dcss_descriptor_pointer_traits::flag_mask;
-    const mw::pointer_type new_flag_bit = flag_value ? dcss_flag_bit : 0;
-    const mw::pointer_type new_flag = (flag & clear_flag) | new_flag_bit;
-    return dcss_descriptor_pointer_traits::combine(new_flag, pid, seq);
 }
 
 } // namespace sl::exec::detail
