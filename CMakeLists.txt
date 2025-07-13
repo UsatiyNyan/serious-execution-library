@@ -22,6 +22,7 @@ add_library(${PROJECT_NAME} STATIC
     src/algo/sched/manual.cpp
     src/coro/async.cpp
     src/thread/detail/multiword_dcss.cpp
+    src/thread/detail/multiword_kcas.cpp
     src/thread/pool/config.cpp
     )
 
@@ -34,6 +35,9 @@ add_subdirectory(dependencies)
 # multiword configuration
 set(SL_EXEC_MW_MAX_THREADS_DEFAULT 256 CACHE STRING "Max count of threads for multiword operations")
 target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_MW_MAX_THREADS_DEFAULT=${SL_EXEC_MW_MAX_THREADS_DEFAULT}")
+
+set(SL_EXEC_KCAS_MAX 16 CACHE STRING "Max amount of arguments passed to kcas")
+target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_KCAS_MAX=${SL_EXEC_KCAS_MAX}")
 
 if (NOT PROJECT_IS_TOP_LEVEL)
     return()
