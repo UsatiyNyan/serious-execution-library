@@ -5,6 +5,7 @@
 #include "sl/exec/algo.hpp"
 #include "sl/exec/model.hpp"
 #include "sl/exec/thread.hpp"
+#include "sl/exec/thread/detail/lock_free_intrusive_linked_list.hpp"
 #include "sl/exec/thread/detail/multiword.hpp"
 #include "sl/exec/thread/detail/multiword_dcss.hpp"
 #include "sl/exec/thread/detail/multiword_kcas.hpp"
@@ -417,6 +418,189 @@ TEST(threadDetailKcas, multiKcasFailure) {
     ASSERT_EQ(b.load(), &b_val);
     ASSERT_EQ(*a.load(), 300);
     ASSERT_EQ(*b.load(), 400);
+}
+
+struct TestNode : lock_free_intrusive_list_node<TestNode, detail::atomic> {
+    TestNode(int value) : value{ value } {}
+    int value;
+};
+using TestList = lock_free_intrusive_list<TestNode, detail::atomic>;
+
+TEST(threadDetailLockFreeIntrusiveList, pushFront) {
+    TestList list;
+    ASSERT_EQ(list.head().load()->intrusive_next.load(), nullptr);
+    ASSERT_EQ(list.tail().load()->intrusive_prev.load(), nullptr);
+    ASSERT_EQ(list.head().load()->intrusive_prev.load(), list.head());
+    ASSERT_EQ(list.tail().load()->intrusive_next.load(), list.tail());
+
+    TestNode first{ 1 };
+    TestNode second{ 2 };
+
+    list.push_front(first);
+    ASSERT_EQ(list.head().load(), &first);
+    ASSERT_EQ(list.tail().load(), &first);
+    ASSERT_EQ(first.intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(first.intrusive_next.load(), list.tail_dummy());
+
+    list.push_front(second);
+    ASSERT_EQ(list.head().load(), &second);
+    ASSERT_EQ(list.tail().load(), &first);
+    ASSERT_EQ(second.intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(second.intrusive_next.load(), &first);
+    ASSERT_EQ(first.intrusive_prev.load(), &second);
+    ASSERT_EQ(first.intrusive_next.load(), list.tail_dummy());
+}
+
+TEST(threadDetailLockFreeIntrusiveList, pushBack) {
+    TestList list;
+    ASSERT_EQ(list.head_dummy()->intrusive_next.load(), nullptr);
+    ASSERT_EQ(list.tail_dummy()->intrusive_prev.load(), nullptr);
+    ASSERT_EQ(list.head_dummy()->intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(list.tail_dummy()->intrusive_next.load(), list.tail_dummy());
+
+    TestNode first{ 1 };
+    TestNode second{ 2 };
+
+    list.push_back(first);
+    ASSERT_EQ(list.head().load(), &first);
+    ASSERT_EQ(list.tail().load(), &first);
+    ASSERT_EQ(first.intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(first.intrusive_next.load(), list.tail_dummy());
+
+    list.push_back(second);
+    ASSERT_EQ(list.head().load(), &first);
+    ASSERT_EQ(list.tail().load(), &second);
+    ASSERT_EQ(first.intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(first.intrusive_next.load(), &second);
+    ASSERT_EQ(second.intrusive_prev.load(), &first);
+    ASSERT_EQ(second.intrusive_next.load(), list.tail_dummy());
+}
+
+TEST(threadDetailLockFreeIntrusiveList, pushFrontPopFront) {
+    TestList list;
+    TestNode first{ 1 };
+    TestNode second{ 2 };
+    list.push_front(first);
+    list.push_front(second);
+
+    auto* second_popped = list.pop_front();
+    ASSERT_EQ(list.head().load(), &first);
+    ASSERT_EQ(list.tail().load(), &first);
+    ASSERT_EQ(first.intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(first.intrusive_next.load(), list.tail_dummy());
+
+    ASSERT_EQ(second_popped, &second);
+    ASSERT_EQ(second_popped->value, 2);
+    ASSERT_EQ(second_popped->intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(second_popped->intrusive_next.load(), nullptr);
+
+    auto* first_popped = list.pop_front();
+    ASSERT_EQ(list.head().load(), list.head_dummy());
+    ASSERT_EQ(list.tail().load(), list.tail_dummy());
+
+    ASSERT_EQ(first_popped, &second);
+    ASSERT_EQ(first_popped->value, 1);
+    ASSERT_EQ(first_popped->intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(first_popped->intrusive_next.load(), nullptr);
+}
+
+TEST(threadDetailLockFreeIntrusiveList, pushBackPopBack) {
+    TestList list;
+    TestNode first{ 1 };
+    TestNode second{ 2 };
+    list.push_back(first);
+    list.push_back(second);
+
+    auto* popped = list.pop_back();
+    ASSERT_EQ(list.head().load(), &first);
+    ASSERT_EQ(list.tail().load(), &first);
+    ASSERT_EQ(first.intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(first.intrusive_next.load(), list.tail_dummy());
+
+    ASSERT_EQ(popped, &second);
+    ASSERT_EQ(popped->intrusive_prev.load(), nullptr);
+    ASSERT_EQ(popped->intrusive_next.load(), list.tail_dummy());
+    ASSERT_EQ(popped->value, 2);
+}
+
+TEST(threadDetailLockFreeIntrusiveList, insertBeforeWorks) {
+    TestList list;
+    TestNode first{ 1 };
+    TestNode second{ 2 };
+    TestNode third{ 3 };
+
+    list.push_back(first);
+    list.push_back(third);
+    const bool inserted = list.insert_before(third, second);
+    ASSERT_TRUE(inserted);
+    ASSERT_EQ(list.head().load(), &first);
+    ASSERT_EQ(list.tail().load(), &third);
+    ASSERT_EQ(first.intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(first.intrusive_next.load(), &second);
+    ASSERT_EQ(second.intrusive_prev.load(), &first);
+    ASSERT_EQ(second.intrusive_next.load(), &third);
+    ASSERT_EQ(third.intrusive_prev.load(), &second);
+    ASSERT_EQ(third.intrusive_next.load(), list.tail_dummy());
+}
+
+TEST(threadDetailLockFreeIntrusiveList, insertAfterWorks) {
+    TestList list;
+    TestNode first{ 1 };
+    TestNode second{ 2 };
+    TestNode third{ 3 };
+
+    list.push_back(first);
+    list.push_back(third);
+    const bool inserted = list.insert_after(first, second);
+    ASSERT_TRUE(inserted);
+    ASSERT_EQ(list.head().load(), &first);
+    ASSERT_EQ(list.tail().load(), &third);
+    ASSERT_EQ(first.intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(first.intrusive_next.load(), &second);
+    ASSERT_EQ(second.intrusive_prev.load(), &first);
+    ASSERT_EQ(second.intrusive_next.load(), &third);
+    ASSERT_EQ(third.intrusive_prev.load(), &second);
+    ASSERT_EQ(third.intrusive_next.load(), list.tail_dummy());
+}
+
+TEST(threadDetailLockFreeIntrusiveList, deleteNodeRemovesCorrectNode) {
+    TestList list;
+    TestNode first{ 1 };
+    TestNode second{ 2 };
+    TestNode third{ 3 };
+
+    list.push_back(first);
+    list.push_back(second);
+    list.push_back(third);
+    const bool second_deleted = list.delete_node(second);
+    ASSERT_TRUE(second_deleted);
+    ASSERT_EQ(second.intrusive_prev.load(), nullptr);
+    ASSERT_EQ(second.intrusive_next.load(), nullptr);
+    ASSERT_EQ(list.head().load(), &first);
+    ASSERT_EQ(list.tail().load(), &third);
+    ASSERT_EQ(first.intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(first.intrusive_next.load(), &third);
+    ASSERT_EQ(third.intrusive_prev.load(), &first);
+    ASSERT_EQ(third.intrusive_next.load(), list.tail_dummy());
+
+    const bool first_deleted = list.delete_node(first);
+    ASSERT_TRUE(first_deleted);
+    ASSERT_EQ(first.intrusive_prev.load(), nullptr);
+    ASSERT_EQ(first.intrusive_next.load(), nullptr);
+    ASSERT_EQ(list.head().load(), &third);
+    ASSERT_EQ(list.tail().load(), &third);
+    ASSERT_EQ(third.intrusive_prev.load(), list.head_dummy());
+    ASSERT_EQ(third.intrusive_next.load(), list.tail_dummy());
+}
+
+TEST(threadDetailLockFreeIntrusiveList, popFrontOnEmptyReturnsNull) {
+    TestList list;
+    ASSERT_EQ(list.pop_front(), nullptr);
+}
+
+TEST(threadDetailLockFreeIntrusiveList, popBackOnEmptyReturnsNull) {
+    TestList list;
+    ASSERT_EQ(list.pop_back(), nullptr);
 }
 
 } // namespace detail
