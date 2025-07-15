@@ -8,6 +8,25 @@ namespace sl::exec::detail {
 
 SL_EXEC_DESCRIPTOR_POOL_TEMPLATE_INSTANTIATE(dcss_descriptor)
 
+// CreateNew(DCSSdes, a1, e1, a2, e2, n2)
+mw::pointer_type dcss_create_new(
+    std::uintptr_t a1,
+    dcss_a1_load_type a1_load,
+    std::uintptr_t e1,
+    detail::atomic<std::uintptr_t>* a2,
+    std::uintptr_t e2,
+    std::uintptr_t n2
+) {
+    DEBUG_ASSERT(
+        !mw::has_flag<dcss_descriptor>(e1) && !mw::has_flag<dcss_descriptor>(e2) && !mw::has_flag<dcss_descriptor>(n2),
+        "algo wouldn't work with highest bit set in initial values"
+    );
+
+    return mw::create_new<dcss_descriptor>(
+        mw::state_type{}, dcss_descriptor::immutables_type{ a1, a1_load, e1, a2, e2, n2 }
+    );
+}
+
 // DCSS(a1, e1, a2, e2, n2) :
 //   des := CreateNew(DCSSdes, a1, e1, a2, e2, n2)
 //   fdes := flag(des)
@@ -25,15 +44,7 @@ std::uintptr_t dcss(
     std::uintptr_t e2,
     std::uintptr_t n2
 ) {
-    DEBUG_ASSERT(
-        !mw::has_flag<dcss_descriptor>(e1) && !mw::has_flag<dcss_descriptor>(e2) && !mw::has_flag<dcss_descriptor>(n2),
-        "algo wouldn't work with highest bit set in initial values"
-    );
-
-    const mw::pointer_type des = mw::create_new<dcss_descriptor>(
-        mw::state_type{}, dcss_descriptor::immutables_type{ a1, a1_load, e1, a2, e2, n2 }
-    );
-
+    const mw::pointer_type des = dcss_create_new(a1, a1_load, e1, a2, e2, n2);
     const mw::pointer_type fdes = mw::set_flag<dcss_descriptor>(des);
 
     std::uintptr_t r{};

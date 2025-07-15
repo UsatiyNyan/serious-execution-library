@@ -348,20 +348,19 @@ TEST(threadDetailMultiwordDcss, readSimple) {
     ASSERT_EQ(value, 0x4343);
 }
 
-// TODO: impossible to test this because of static initialization, need fuzz-testing
-// TEST(threadDetailMultiwordDcss, readHelps) {
-//     std::uintptr_t e1{ 0xAAAA }, e2{ 0xBBBB }, n2{ 0xCCCC };
-//     detail::atomic<std::uintptr_t> a1{ e1 }, a2{ e2 };
-//
-//     const mw::pointer_type des =
-//         mw::create_new<dcss_descriptor>(mw::state_type{}, dcss_descriptor::immutables_type{ &a1, e1, &a2, e2, n2 });
-//     const mw::pointer_type fdes = mw::set_flag<dcss_descriptor>(des);
-//     a2.store(fdes, std::memory_order::relaxed);
-//
-//     const auto result = dcss_read<std::uintptr_t>(a2);
-//     ASSERT_FALSE(mw::has_flag<dcss_descriptor>(result));
-//     ASSERT_EQ(result, n2);
-// }
+TEST(threadDetailMultiwordDcss, readHelps) {
+    std::uintptr_t e1{ 0xAAAA }, e2{ 0xBBBB }, n2{ 0xCCCC };
+    detail::atomic<std::uintptr_t> a1{ e1 }, a2{ e2 };
+
+    const mw::pointer_type des =
+        dcss_create_new(std::bit_cast<std::uintptr_t>(&a1), dcss_a1_load_default<std::uintptr_t>, e1, &a2, e2, n2);
+    const mw::pointer_type fdes = mw::set_flag<dcss_descriptor>(des);
+    a2.store(fdes, std::memory_order::relaxed);
+
+    const auto result = dcss_read<std::uintptr_t>(a2);
+    ASSERT_FALSE(mw::has_flag<dcss_descriptor>(result));
+    ASSERT_EQ(result, n2);
+}
 
 TEST(threadDetailKcas, readSimplePointer) {
     int value = 1234;
