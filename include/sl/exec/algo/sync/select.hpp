@@ -28,7 +28,6 @@
 #include <sl/meta/lifetime/defer.hpp>
 #include <sl/meta/match/overloaded.hpp>
 #include <sl/meta/tuple/for_each.hpp>
-#include <sl/meta/type/undefined.hpp>
 #include <sl/meta/type/unit.hpp>
 
 #include <cstdint>
@@ -41,7 +40,7 @@ template <typename F, typename SomeSignalT>
 concept SelectFunctorFor = std::invocable<F, typename SomeSignalT::value_type>;
 
 template <typename SomeSignalT, SelectFunctorFor<SomeSignalT> F>
-    requires std::same_as<typename SomeSignalT::error_type, meta::undefined>
+    requires std::same_as<typename SomeSignalT::error_type, meta::unit>
 struct select_case {
     using signal_type = SomeSignalT;
     using functor_type = F;
@@ -53,7 +52,7 @@ public:
 };
 
 template <template <typename> typename Atomic, typename ValueT>
-struct select_slot : slot<ValueT, meta::undefined> {
+struct select_slot : slot<ValueT, meta::unit> {
     virtual ~select_slot() = default;
     [[nodiscard]] virtual Atomic<std::size_t>& get_done() & = 0;
     virtual void set_value_skip_done(ValueT&& value) & = 0;
@@ -62,7 +61,7 @@ struct select_slot : slot<ValueT, meta::undefined> {
 template <template <typename> typename Atomic, bool ConnectionsAreOrdered, typename ValueT, typename... SelectCaseTs>
 struct select_connection : cancel_mixin {
     using value_type = ValueT;
-    using error_type = meta::undefined;
+    using error_type = meta::unit;
 
     template <typename SelectCase>
     struct case_slot_type : select_slot<Atomic, typename SelectCase::signal_type::value_type> {
@@ -76,7 +75,7 @@ struct select_connection : cancel_mixin {
         void set_value(value_type&& value) & override {
             self_.set_value_impl</*CheckDone=*/true>(std::move(value), std::move(functor_), index_);
         }
-        void set_error(meta::undefined&&) & override { UNREACHABLE(); }
+        void set_error(meta::unit&&) & override { self_.set_error_impl(); }
         void set_null() & override { self_.set_null_impl(); }
 
         Atomic<std::size_t>& get_done() & override { return self_.done_; }
@@ -214,11 +213,30 @@ private:
         try_cancel_beside(index);
     }
 
+    void set_error_impl() & {
+        const bool is_last = increment_and_check();
+        if (!is_last) {
+            return;
+        }
+        meta::defer cleanup{ [this] { delete this; } };
+
+        if (try_check_done()) {
+            return;
+        }
+        slot_.set_error(meta::unit{});
+    }
+
     void set_null_impl() & {
         const bool is_last = increment_and_check();
-        if (is_last) {
-            delete this;
+        if (!is_last) {
+            return;
         }
+        meta::defer cleanup{ [this] { delete this; } };
+
+        if (try_check_done()) {
+            return;
+        }
+        slot_.set_null();
     }
 
     void try_cancel_beside(std::size_t excluded_index) {
@@ -250,7 +268,7 @@ struct select_connection_box {
     using connection_type = select_connection<Atomic, ConnectionsAreOrdered, ValueT, SelectCaseTs...>;
 
 public:
-    select_connection_box(std::tuple<SelectCaseTs...>&& cases, slot<ValueT, meta::undefined>& slot)
+    select_connection_box(std::tuple<SelectCaseTs...>&& cases, slot<ValueT, meta::unit>& slot)
         : connection_{ std::make_unique<connection_type>(std::move(cases), slot) } {}
 
     cancel_mixin& get_cancel_handle() & {
@@ -270,8 +288,8 @@ private:
 template <template <typename> typename Atomic, bool ConnectionsAreOrdered, typename ValueT, typename... SelectCaseTs>
 struct select {
     using value_type = ValueT;
-    using error_type = meta::undefined;
-    using default_case_signal = result_signal<meta::unit, meta::undefined>;
+    using error_type = meta::unit;
+    using default_case_signal = result_signal<meta::unit, meta::unit>;
 
 public:
     template <typename SelectCaseT>

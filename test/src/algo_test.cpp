@@ -648,9 +648,10 @@ TEST(algo, selectAsAny) {
     std::size_t counter1 = 0;
     std::size_t counter2 = 0;
     std::size_t counter3 = 0;
-    auto s1 = as_signal(meta::result<int, meta::undefined>{ 69 });
-    auto s2 = start_on(executor) | map([](meta::unit) { return std::string{ "42" }; });
-    auto s3 = as_signal(meta::result<int, meta::undefined>{ 72 });
+    auto s1 = as_signal(meta::result<int, meta::unit>{ 69 });
+    auto s2 = as_signal(meta::result<meta::unit, meta::unit>{}) | continue_on(executor)
+              | map([](meta::unit) { return std::string{ "42" }; });
+    auto s3 = as_signal(meta::result<int, meta::unit>{ 72 });
     auto maybe_result = select()
                             .case_(
                                 std::move(s1),
@@ -749,6 +750,157 @@ TEST(algo, selectChannel) {
     EXPECT_EQ(counter1, 0);
     EXPECT_EQ(counter2, 1);
     EXPECT_EQ(counter3, 0);
+}
+
+TEST(algo, selectChannelDefault) {
+    std::size_t counter1 = 0;
+    std::size_t counter2 = 0;
+    std::size_t counter3 = 0;
+    std::size_t counter_default = 0;
+    auto channel1 = make_channel<int>();
+    auto channel2 = make_channel<std::string>();
+    auto channel3 = make_channel<double>();
+
+    const auto result_default = //
+        select() //
+            .case_(
+                channel1->send(42),
+                [&counter1](meta::unit) {
+                    ++counter1;
+                    return meta::unit{};
+                }
+            )
+            .case_(
+                channel2->receive(),
+                [&counter2](std::string) {
+                    ++counter2;
+                    return meta::unit{};
+                }
+            )
+            .case_(
+                channel3->send(4.0),
+                [&counter3](meta::unit) {
+                    ++counter3;
+                    return meta::unit{};
+                }
+            )
+            .default_([&counter_default](meta::unit) {
+                ++counter_default;
+                return meta::unit{};
+            })
+        | get<nowait_event>();
+    ASSERT_TRUE(result_default.has_value());
+    EXPECT_TRUE(result_default->has_value());
+    EXPECT_EQ(counter1, 0);
+    EXPECT_EQ(counter2, 0);
+    EXPECT_EQ(counter3, 0);
+    EXPECT_EQ(counter_default, 1);
+
+    channel2->send("hehe") | detach();
+    const auto result_channel2 = //
+        select() //
+            .case_(
+                channel1->send(42),
+                [&counter1](meta::unit) {
+                    ++counter1;
+                    return meta::unit{};
+                }
+            )
+            .case_(
+                channel2->receive(),
+                [&counter2](std::string) {
+                    ++counter2;
+                    return meta::unit{};
+                }
+            )
+            .case_(
+                channel3->send(4.0),
+                [&counter3](meta::unit) {
+                    ++counter3;
+                    return meta::unit{};
+                }
+            )
+            .default_([&counter_default](meta::unit) {
+                ++counter_default;
+                return meta::unit{};
+            })
+        | get<nowait_event>();
+    ASSERT_TRUE(result_channel2.has_value());
+    EXPECT_TRUE(result_channel2->has_value());
+    EXPECT_EQ(counter1, 0);
+    EXPECT_EQ(counter2, 1);
+    EXPECT_EQ(counter3, 0);
+    EXPECT_EQ(counter_default, 1);
+}
+
+TEST(algo, channelCloseSend) {
+    auto channel = make_channel<int>();
+    channel->send(1) | detach();
+    channel->send(2) | detach();
+
+    const auto result_close = channel->close() | get<nowait_event>();
+    EXPECT_TRUE(result_close->has_value());
+
+    const auto result_close_retry = channel->close() | get<nowait_event>();
+    EXPECT_FALSE(result_close_retry->has_value());
+
+    const auto result_receive1 = channel->receive() | get<nowait_event>();
+    ASSERT_TRUE(result_receive1->has_value());
+    EXPECT_EQ(result_receive1->value(), 1);
+
+    const auto result_send_after_close = channel->send(3) | get<nowait_event>();
+    EXPECT_FALSE(result_send_after_close->has_value());
+
+    const auto result_receive2 = channel->receive() | get<nowait_event>();
+    ASSERT_TRUE(result_receive2->has_value());
+    EXPECT_EQ(result_receive2->value(), 2);
+
+    const auto result_receive_empty = channel->receive() | get<nowait_event>();
+    EXPECT_FALSE(result_receive_empty->has_value());
+}
+
+TEST(algo, channelCloseReceive) {
+    std::size_t counter1 = 0;
+    std::size_t counter_err1 = 0;
+    std::size_t counter2 = 0;
+    std::size_t counter_err2 = 0;
+
+    auto channel = make_channel<int>();
+    channel->receive() | map([&counter1](int) {
+        ++counter1;
+        return meta::unit{};
+    }) | map_error([&counter_err1](meta::unit) {
+        ++counter_err1;
+        return meta::unit{};
+    }) | detach();
+    channel->receive() | map([&counter2](int) {
+        ++counter2;
+        return meta::unit{};
+    }) | map_error([&counter_err2](meta::unit) {
+        ++counter_err2;
+        return meta::unit{};
+    }) | detach();
+
+    const auto result_before_close = channel->send(1) | get<nowait_event>();
+    EXPECT_TRUE(result_before_close->has_value());
+    EXPECT_EQ(counter1, 1);
+    EXPECT_EQ(counter_err1, 0);
+    EXPECT_EQ(counter2, 0);
+    EXPECT_EQ(counter_err2, 0);
+
+    const auto result_close = channel->close() | get<nowait_event>();
+    EXPECT_TRUE(result_close->has_value());
+    EXPECT_EQ(counter1, 1);
+    EXPECT_EQ(counter_err1, 0);
+    EXPECT_EQ(counter2, 0);
+    EXPECT_EQ(counter_err2, 1);
+    
+    const auto result_after_close = channel->send(2) | get<nowait_event>();
+    EXPECT_FALSE(result_after_close->has_value());
+    EXPECT_EQ(counter1, 1);
+    EXPECT_EQ(counter_err1, 0);
+    EXPECT_EQ(counter2, 0);
+    EXPECT_EQ(counter_err2, 1);
 }
 
 } // namespace sl::exec

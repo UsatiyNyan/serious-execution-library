@@ -36,7 +36,7 @@ as a description of the source of asynchrony.
   - `result` - starts asynchrony from *just* a value, the simplest entrance into `signal` monad
   - `contract` - classic pair of `future ~ eager signal` and `promise ~ slot`, is one-shot
   - `pipe` - SPSC pseudo-blocking channel, restrictive, but fast for 1-to-1 communication
-  - `channel` - MPMC non-blocking channel, similar to Golang's `chan` but is lock-free
+  - `channel` - MPMC non-blocking channel, similar to Golang's `chan`
 - `sched` - interactions with `executor`
   - `start_on`, `continue_on` - scheduling signals
   - `inline` - immediate executor
@@ -89,8 +89,8 @@ async<...> coro(T x);
 
 # TODO
 
-- [ ] channel
-  - [ ] select
+- [ ] lock-free channel
+  - [ ] lock-free list
 - [ ] slots:
   - [ ] noexcept
   - [ ] set_result(...) -> bool
