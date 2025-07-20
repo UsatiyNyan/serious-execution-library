@@ -559,9 +559,49 @@ TEST(algo, cancellablePipeAll) {
     EXPECT_EQ(counter_all, 1);
 }
 
-// TEST(algo, cancellablePipeAny) {
-// auto [in, out] = make_pipe<meta::unit, meta::undefined>();
-// }
+TEST(algo, cancellablePipeAny) {
+    std::size_t counter1 = 0;
+    std::size_t counter2 = 0;
+    std::size_t counter_any = 0;
+
+    auto [in1, out1] = make_pipe<meta::unit, meta::unit>();
+    auto [in2, out2] = make_pipe<meta::unit, meta::unit>();
+
+    auto signal1 = out1.receive() | map_error([&counter1](meta::unit) {
+                       ++counter1;
+                       return meta::unit{};
+                   });
+    auto signal2 = out2.receive() | map_error([&counter2](meta::unit) {
+                       ++counter2;
+                       return meta::unit{};
+                   });
+
+    any(std::move(signal1), std::move(signal2)) | map_error([&counter_any](meta::unit) {
+        ++counter_any;
+        return meta::unit{};
+    }) | detach();
+
+    in1.send(meta::err(meta::unit{})) | detach();
+    EXPECT_EQ(counter1, 1);
+    EXPECT_EQ(counter2, 0);
+    EXPECT_EQ(counter_any, 0);
+
+    in2.send(meta::err(meta::unit{})) | detach();
+    EXPECT_EQ(counter1, 1);
+    EXPECT_EQ(counter2, 1);
+    EXPECT_EQ(counter_any, 1);
+
+    // will not ASSERT
+    in2.send(meta::err(meta::unit{})) | detach();
+
+    out2.receive() | map_error([&counter2](meta::unit) {
+        ++counter2;
+        return meta::unit{};
+    }) | detach();
+    EXPECT_EQ(counter1, 1);
+    EXPECT_EQ(counter2, 2);
+    EXPECT_EQ(counter_any, 1);
+}
 
 // TEST(algo, cancellablePipeCombinatorsCancelled) {}
 
