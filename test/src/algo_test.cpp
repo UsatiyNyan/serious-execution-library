@@ -605,7 +605,31 @@ TEST(algo, cancellablePipeAny) {
     EXPECT_EQ(counter_any, 1);
 }
 
-// TEST(algo, cancellablePipeCombinatorsCancelled) {}
+TEST(algo, cancellablePipeCombinatorsCancelled) {
+    auto [in, out] = make_pipe<meta::unit, meta::undefined>();
+    std::size_t counter = 0;
+
+    auto connection = //
+        out.receive() //
+        | map([&counter](meta::unit) {
+              ++counter;
+              return meta::unit{};
+          })
+        | subscribe();
+
+    auto& cancel_handle = connection.get_cancel_handle();
+    EXPECT_TRUE(cancel_handle.intrusive_next);
+    EXPECT_TRUE(cancel_handle.intrusive_next->intrusive_next);
+
+    std::move(connection).emit();
+    EXPECT_TRUE(cancel_handle.try_cancel());
+
+    in.send(meta::unit{}) | detach();
+    EXPECT_EQ(counter, 0);
+
+    // would ASSERT
+    // in.send(meta::unit{}) | detach();
+}
 
 TEST(algo, channelSimple) {
     auto channel = make_channel<int>();
