@@ -918,13 +918,151 @@ TEST(algo, channelCloseReceive) {
     EXPECT_EQ(counter_err1, 0);
     EXPECT_EQ(counter2, 0);
     EXPECT_EQ(counter_err2, 1);
-    
+
     const auto result_after_close = channel->send(2) | get<nowait_event>();
     EXPECT_FALSE(result_after_close->has_value());
     EXPECT_EQ(counter1, 1);
     EXPECT_EQ(counter_err1, 0);
     EXPECT_EQ(counter2, 0);
     EXPECT_EQ(counter_err2, 1);
+}
+
+TEST(algo, selectSingleChannelReceiveSend) {
+    std::size_t send_counter = 0;
+    std::size_t receive_counter = 0;
+    auto channel = make_channel<int>();
+
+    channel->send(42) | detach();
+
+    const auto result = select()
+                            .case_(
+                                channel->receive(),
+                                [&receive_counter](int value) {
+                                    ++receive_counter;
+                                    EXPECT_EQ(value, 42);
+                                    return meta::unit{};
+                                }
+                            )
+                            .case_(
+                                channel->send(42),
+                                [&send_counter](meta::unit) {
+                                    ++send_counter;
+                                    return meta::unit{};
+                                }
+                            )
+                        | get<nowait_event>();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->has_value());
+    EXPECT_EQ(send_counter, 0);
+    EXPECT_EQ(receive_counter, 1);
+}
+
+TEST(algo, selectSingleChannelReceiveSendWithDefault) {
+    std::size_t send_counter = 0;
+    std::size_t receive_counter = 0;
+    std::size_t default_counter = 0;
+    auto channel = make_channel<int>();
+
+    channel->send(42) | detach();
+
+    const auto result = select()
+                            .case_(
+                                channel->receive(),
+                                [&receive_counter](int value) {
+                                    ++receive_counter;
+                                    EXPECT_EQ(value, 42);
+                                    return meta::unit{};
+                                }
+                            )
+                            .case_(
+                                channel->send(42),
+                                [&send_counter](meta::unit) {
+                                    ++send_counter;
+                                    return meta::unit{};
+                                }
+                            )
+                            .default_([&default_counter](meta::unit) {
+                                ++default_counter;
+                                return meta::unit{};
+                            })
+                        | get<nowait_event>();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->has_value());
+    EXPECT_EQ(send_counter, 0);
+    EXPECT_EQ(receive_counter, 1);
+    EXPECT_EQ(default_counter, 0);
+}
+
+TEST(algo, selectSingleChannelSendReceive) {
+    std::size_t send_counter = 0;
+    std::size_t receive_counter = 0;
+    auto channel = make_channel<int>();
+
+    channel->send(42) | detach();
+
+    const auto result = select()
+                            .case_(
+                                channel->send(42),
+                                [&send_counter](meta::unit) {
+                                    ++send_counter;
+                                    return meta::unit{};
+                                }
+                            )
+                            .case_(
+                                channel->receive(),
+                                [&receive_counter](int value) {
+                                    ++receive_counter;
+                                    EXPECT_EQ(value, 42);
+                                    return meta::unit{};
+                                }
+                            )
+                        | get<nowait_event>();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->has_value());
+    // receive still wins
+    EXPECT_EQ(send_counter, 0);
+    EXPECT_EQ(receive_counter, 1);
+}
+
+TEST(algo, selectSingleChannelSendReceiveWithDefault) {
+    std::size_t send_counter = 0;
+    std::size_t receive_counter = 0;
+    std::size_t default_counter = 0;
+    auto channel = make_channel<int>();
+
+    channel->send(42) | detach();
+
+    const auto result = select()
+                            .case_(
+                                channel->send(42),
+                                [&send_counter](meta::unit) {
+                                    ++send_counter;
+                                    return meta::unit{};
+                                }
+                            )
+                            .case_(
+                                channel->receive(),
+                                [&receive_counter](int value) {
+                                    ++receive_counter;
+                                    EXPECT_EQ(value, 42);
+                                    return meta::unit{};
+                                }
+                            )
+                            .default_([&default_counter](meta::unit) {
+                                ++default_counter;
+                                return meta::unit{};
+                            })
+                        | get<nowait_event>();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->has_value());
+    EXPECT_EQ(send_counter, 0);
+    // receive still wins
+    EXPECT_EQ(receive_counter, 1);
+    EXPECT_EQ(default_counter, 0);
 }
 
 } // namespace sl::exec
