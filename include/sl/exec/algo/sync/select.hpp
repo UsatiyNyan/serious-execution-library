@@ -23,6 +23,7 @@
 #include "sl/exec/thread/detail/multiword_kcas.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
 
+#include <numbers>
 #include <sl/meta/func/lazy_eval.hpp>
 #include <sl/meta/intrusive/forward_list.hpp>
 #include <sl/meta/lifetime/defer.hpp>
@@ -57,6 +58,7 @@ struct select_slot : slot<ValueT, meta::unit> {
     [[nodiscard]] virtual Atomic<std::size_t>& get_done() & = 0;
     virtual void set_value_skip_done(ValueT&& value) & = 0;
 };
+
 
 template <template <typename> typename Atomic, bool ConnectionsAreOrdered, typename ValueT, typename... SelectCaseTs>
 struct select_connection : cancel_mixin {
@@ -144,8 +146,8 @@ public: // Connection
             );
 
             constexpr meta::overloaded get_ordering{
-                [](const OrderedConnection auto* connection) { return connection->get_ordering(); },
-                [](const Connection auto*) { return std::numeric_limits<std::uintptr_t>::max(); },
+                [](const Ordered auto* ordered) { return ordered->get_ordering(); },
+                [](const auto*) { return std::numeric_limits<std::uintptr_t>::max(); },
             };
 
             std::stable_sort(
@@ -304,7 +306,7 @@ public:
     constexpr auto case_(NextSignalT&& signal, NextF&& functor) && {
         return select<
             Atomic,
-            ConnectionsAreOrdered && OrderedConnection<ConnectionFor<NextSignalT>>,
+            ConnectionsAreOrdered && Ordered<ConnectionFor<NextSignalT>>,
             ValueT,
             SelectCaseTs...,
             NextCaseT>{
@@ -334,7 +336,7 @@ struct select_start {
     template <SomeSignal SomeSignalT, SelectFunctorFor<SomeSignalT> F>
     auto case_(SomeSignalT&& signal, F&& functor) {
         using case_type = select_case<SomeSignalT, F>;
-        return select<Atomic, OrderedConnection<ConnectionFor<SomeSignalT>>, typename case_type::value_type, case_type>{
+        return select<Atomic, Ordered<ConnectionFor<SomeSignalT>>, typename case_type::value_type, case_type>{
             case_type{ std::move(signal), std::move(functor) },
         };
     }

@@ -206,11 +206,15 @@ private:
         if (send_node.get_select().has_value() && receive_node.get_select().has_value()) {
             auto& send_select = send_node.get_select().value();
             auto& receive_select = receive_node.get_select().value();
+            auto& send_done = send_select.get_done();
+            auto& receive_done = receive_select.get_done();
+            const bool distinct_selects = &send_done != &receive_done;
 
-            const bool success = kcas(
-                kcas_arg<std::size_t>{ .a = send_select.get_done(), .e = 0, .n = 1 },
-                kcas_arg<std::size_t>{ .a = receive_select.get_done(), .e = 0, .n = 1 }
-            );
+            const bool success = distinct_selects
+                                 && kcas(
+                                     kcas_arg<std::size_t>{ .a = send_done, .e = 0, .n = 1 },
+                                     kcas_arg<std::size_t>{ .a = receive_done, .e = 0, .n = 1 }
+                                 );
 
             if (success) {
                 lock.unlock();
@@ -296,7 +300,7 @@ struct [[nodiscard]] channel_send_signal {
         cancel_mixin& get_cancel_handle() & { return *this; }
         void emit() && { impl_.send(node_); }
 
-    public: // OrderedConnection
+    public: // Ordered
         std::uintptr_t get_ordering() const& { return static_cast<std::uintptr_t>(&impl_); }
 
     public: // cancel_mixin
@@ -310,7 +314,7 @@ struct [[nodiscard]] channel_send_signal {
 public:
     constexpr channel_send_signal(ValueT&& value, impl_type& impl) : value_{ std::move(value) }, impl_{ impl } {}
 
-    OrderedConnection auto subscribe(slot<value_type, error_type>& slot) && {
+    Connection auto subscribe(slot<value_type, error_type>& slot) && {
         return connection_type{ std::move(value_), slot, impl_ };
     }
     OrderedConnection auto subscribe(select_slot<Atomic, value_type>& select_slot) && {
@@ -347,7 +351,7 @@ struct [[nodiscard]] channel_receive_signal {
         cancel_mixin& get_cancel_handle() & { return *this; }
         void emit() && { impl_.receive(node_); }
 
-    public: // OrderedConnection
+    public: // Ordered
         std::uintptr_t get_ordering() const& { return static_cast<std::uintptr_t>(&impl_) + ordering_offset; }
 
     public: // cancel_mixin
@@ -361,7 +365,7 @@ struct [[nodiscard]] channel_receive_signal {
 public:
     constexpr explicit channel_receive_signal(impl_type& impl) : impl_{ impl } {}
 
-    OrderedConnection auto subscribe(slot<value_type, error_type>& slot) && { return connection_type{ slot, impl_ }; }
+    Connection auto subscribe(slot<value_type, error_type>& slot) && { return connection_type{ slot, impl_ }; }
     OrderedConnection auto subscribe(select_slot<Atomic, value_type>& select_slot) && {
         return connection_type{ select_slot, impl_ };
     }

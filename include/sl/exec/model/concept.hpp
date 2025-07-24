@@ -21,10 +21,13 @@ concept Connection = requires(ConnectionT connection) {
     std::move(connection).emit();
 };
 
-template <typename OrderedConnectionT>
-concept OrderedConnection = Connection<OrderedConnectionT> && requires(const OrderedConnectionT& connection) {
-    { connection.get_ordering() } -> std::same_as<std::uintptr_t>;
+template <typename OrderedT>
+concept Ordered = requires(const OrderedT& ordered) {
+    { ordered.get_ordering() } -> std::same_as<std::uintptr_t>;
 };
+
+template <typename OrderedConnectionT>
+concept OrderedConnection = Connection<OrderedConnectionT> && Ordered<OrderedConnectionT>;
 
 template <typename SomeSignalT>
 concept SomeSignal = requires() {
