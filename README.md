@@ -1,6 +1,105 @@
 # serious-execution-library
 
-For serious programmers.
+This library describes a building blocks for creating asynchronous and parallel execution.
+
+It contains different `Signal`-s (which are also known as `Future` or `Sender`) and their parallel and sequential compositions.
+
+`Slot`-s (also known as `Promise` or `Receiver`) are considered part of internal implementation and should not be depended on.
+
+`Executor`-s describe how `Signal`-s are scheduled and executed. 
+
+For the most part `monolithic_thread_pool` (or `distributed_thread_pool` when it's ready) should be used. 
+
+Use `manual_executor` for single-threaded environment.
+
+# Usage
+
+```cmake
+FetchContent_Declare(
+        serious-execution-library
+        GIT_REPOSITORY git@github.com:UsatiyNyan/serious-execution-library.git
+        GIT_TAG 1.0.0
+)
+FetchContent_MakeAvailable(serious-execution-library)
+```
+
+# Showcase
+
+## send some work to "background"
+
+```cpp
+executor& thread_pool = ...;
+schedule(thread_pool, [] -> meta::result<..., ...> { /* some work */}) 
+    | and_then([]{ /* some other work via a separate step on thread_pool */ })
+    | detach();
+
+```
+
+## map-reduce
+
+"joke" example, since all(...) does not accept std::vector yet
+
+```cpp
+executor& thread_pool = ...;
+const vector<InputT> inputs = ...;
+const auto [inputs1, ...] = split(inputs);
+const ReduceResultT result =
+    all(
+        as_signal(inputs1) | continue_on(thread_pool) | map([](vector<InputT> inputs_part) -> vector<MapResultT> { ... }),
+        ...
+    ) 
+    | map([](tuple<vector<MapResultT>, ...> inputs_parts) {
+        return reduce(inputs_parts...);
+    }) 
+    | get<>();
+```
+
+## coroutines
+
+```cpp
+executor& thread_pool = ...;
+
+constexpr auto another_coro = [](Response response) -> async<Value> {
+    co_return ...;
+};
+
+coro_schedule(thread_pool, [] -> async<void> {
+    const auto response_result = co_await request("..."); // where request(...) -> Signal<Response, Error>
+    if (!response_result.has_value()) {
+        // handle Error
+        co_return;
+    }
+
+    const auto value = co_await another_coro(response_result.value());
+    ...
+});
+```
+
+## channel/select
+
+```cpp
+executor& thread_pool = ...;
+
+auto channel1 = make_channel<int>();
+auto channel2 = make_channel<std::string>();
+
+// ... give channels to coroutines for example
+coro_schedule(thread_pool, [channel2] -> async<void> {
+    co_await channel2->send("from coro");
+});
+
+const auto result = select() //
+    .case_(channel1->send(42), [](meta::unit) { return std::string{"sent int 42"}; })
+    .case_(channel2->receive(), [](std::string value) { return "received string: " + value; })
+    .default_([](meta::unit) { return std::string{"no channel was ready"}; })
+    | get<>();
+const auto value = result->value();
+std::cout << value << std::endl;
+```
+
+## and more!
+
+see [here](test/src)
 
 # v1 API
 
@@ -36,7 +135,6 @@ as a description of the source of asynchrony.
   - `result` - starts asynchrony from *just* a value, the simplest entrance into `signal` monad
   - `contract` - classic pair of `future ~ eager signal` and `promise ~ slot`, is one-shot
   - `pipe` - SPSC pseudo-blocking channel, restrictive, but fast for 1-to-1 communication
-  - `channel` - MPMC non-blocking channel, similar to Golang's `chan`
 - `sched` - interactions with `executor`
   - `start_on`, `continue_on` - scheduling signals
   - `inline` - immediate executor
@@ -44,6 +142,7 @@ as a description of the source of asynchrony.
 - `sync` - execution strategies for synchronization
   - `serial` - serial executor, wraps any other executor into single-threaded pipeline
   - `mutex` - wrapper around serial executor, has better unlock strategy (w/o thundering herd)
+  - `channel`, `select` - similar to Golang's `chan` and `select` statement
 - `tf/seq` - sequential transforms of `signal`-s
   - `and_then`, `or_else`, `map`, `map_error`, `flatten` - classic monadic operations
 - `tf/par` - enabling parallel execution and races
