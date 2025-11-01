@@ -29,7 +29,9 @@ namespace detail {
 
 template <typename ValueT, typename ErrorT>
 struct share_node : meta::intrusive_forward_list_node<share_node<ValueT, ErrorT>> {
-    slot<ValueT, ErrorT>& slot;
+    share_node(slot<ValueT, ErrorT>& a_slot) : slot_{ a_slot } {}
+
+    slot<ValueT, ErrorT>& slot_;
 };
 
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic>
@@ -105,7 +107,7 @@ public: // fulfillment
 
         if (state == share_state_result) {
             // exlicit copy, unfortunately
-            fulfill_slot(node.slot, meta::maybe<result_type>{ maybe_result_ });
+            fulfill_slot(node.slot_, meta::maybe<result_type>{ maybe_result_ });
             decref();
         }
     }
@@ -131,7 +133,7 @@ private:
             node_list,
             [&slot_list_count, &maybe_result_ref = maybe_result_](share_node<value_type, error_type>* node_ptr) {
                 // exlicit copy, unfortunately
-                fulfill_slot(node_ptr->slot, meta::maybe<result_type>{ maybe_result_ref });
+                fulfill_slot(node_ptr->slot_, meta::maybe<result_type>{ maybe_result_ref });
                 ++slot_list_count;
             }
         );
@@ -147,8 +149,7 @@ private:
 
 template <
     SomeSignal SignalT,
-    template <typename>
-    typename Atomic,
+    template <typename> typename Atomic,
     typename ValueT = typename SignalT::value_type,
     typename ErrorT = typename SignalT::error_type>
 struct [[nodiscard]] share_storage final : share_storage_base<ValueT, ErrorT, Atomic> {
@@ -172,13 +173,13 @@ struct [[nodiscard]] share_connection : meta::immovable {
         detail::share_storage_base<ValueT, ErrorT, Atomic>* storage_ptr,
         slot<ValueT, ErrorT>& slot
     )
-        : node_{ .slot = slot }, storage_ptr_{ storage_ptr } {
+        : node_{ slot }, storage_ptr_{ storage_ptr } {
         // implicitly not propagating cancel-s into original signal
     }
 
     ~share_connection() { detail::share_storage_base<ValueT, ErrorT, Atomic>::try_decref(storage_ptr_); }
 
-    cancel_mixin& get_cancel_handle() & { return node_.slot; }
+    cancel_mixin& get_cancel_handle() & { return node_.slot_; }
 
     void emit() && {
         auto* storage_ptr = std::exchange(storage_ptr_, nullptr);

@@ -39,6 +39,9 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_MW_MAX_THREADS_DEFAUL
 set(SL_EXEC_KCAS_MAX 16 CACHE STRING "Max amount of arguments passed to kcas")
 target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_KCAS_MAX=${SL_EXEC_KCAS_MAX}")
 
+set(SL_EXEC_INTERFERENCE_SIZE 64 CACHE STRING "Interference size, set to 0 to use stdlib")
+target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_INTERFERENCE_SIZE=${SL_EXEC_INTERFERENCE_SIZE}")
+
 if (NOT PROJECT_IS_TOP_LEVEL)
     return()
 endif ()

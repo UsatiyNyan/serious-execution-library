@@ -27,9 +27,9 @@ private:
             auto* tail = meta::intrusive_forward_list_node_reverse(head);
 
             std::size_t batch_size = 0;
-            meta::intrusive_forward_list_node_for_each(tail, [&batch_size](task_node* task_node) {
+            meta::intrusive_forward_list_node_for_each(tail, [&batch_size](task_node* a_task_node) {
                 ++batch_size;
-                task_node->execute();
+                a_task_node->execute();
             });
 
             const std::uint32_t work_before_batch = self_.work_.fetch_sub(batch_size, std::memory_order::relaxed);
@@ -44,7 +44,7 @@ private:
     };
 
 public:
-    constexpr explicit serial_executor(executor& executor) : task_{ *this }, executor_{ executor } {}
+    constexpr explicit serial_executor(executor& an_executor) : task_{ *this }, executor_{ an_executor } {}
 
     void schedule(task_node* task_node) noexcept override {
         batch_.push(task_node); // release task

@@ -19,7 +19,7 @@ namespace detail {
 
 template <typename ValueT, typename ErrorT>
 struct [[nodiscard]] promise_connection : meta::immovable {
-    explicit promise_connection(slot<ValueT, ErrorT>& slot) : slot_{ slot } {}
+    explicit promise_connection(slot<ValueT, ErrorT>& a_slot) : slot_{ a_slot } {}
 
     cancel_mixin& get_cancel_handle() & { return slot_; }
 
@@ -35,7 +35,7 @@ struct [[nodiscard]] promise_signal : meta::unique {
     using error_type = ErrorT;
 
 public:
-    explicit promise_signal(slot<ValueT, ErrorT>** slot) : slot_{ slot } {}
+    explicit promise_signal(slot<ValueT, ErrorT>** a_slot) : slot_{ a_slot } {}
 
     Connection auto subscribe(slot<value_type, error_type>& slot) && {
         *slot_ = &slot;
@@ -52,14 +52,14 @@ private:
 
 template <typename ValueT, typename ErrorT>
 struct [[nodiscard]] promise : meta::finalizer<promise<ValueT, ErrorT>> {
-    explicit promise(slot<ValueT, ErrorT>* slot)
-        : meta::finalizer<promise>{ [](promise& self) {
-              if (auto* const slot = std::exchange(self.slot_, nullptr); slot != nullptr) {
-                  slot->set_null();
-              }
-          } },
-          slot_{ slot } {
+    explicit promise(slot<ValueT, ErrorT>* a_slot) : meta::finalizer<promise>{ finalize }, slot_{ a_slot } {
         DEBUG_ASSERT(slot_ != nullptr);
+    }
+
+    static void finalize(promise& self) {
+        if (auto* const a_slot = std::exchange(self.slot_, nullptr); a_slot != nullptr) {
+            a_slot->set_null();
+        }
     }
 
     void set_value(ValueT&& value) & {
@@ -90,8 +90,8 @@ struct contract {
     using future_type = detail::force_signal<detail::promise_signal<ValueT, ErrorT>, Atomic>;
     using promise_type = promise<ValueT, ErrorT>;
 
-    future_type future;
-    promise_type promise;
+    future_type f;
+    promise_type p;
 };
 
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic = detail::atomic>
@@ -99,8 +99,8 @@ contract<ValueT, ErrorT, Atomic> make_contract() {
     slot<ValueT, ErrorT>* promise_slot = nullptr;
     auto signal = detail::promise_signal<ValueT, ErrorT>{ &promise_slot } | force();
     return contract<ValueT, ErrorT, Atomic>{
-        .future = std::move(signal),
-        .promise{ promise_slot },
+        .f = std::move(signal),
+        .p{ promise_slot },
     };
 }
 
