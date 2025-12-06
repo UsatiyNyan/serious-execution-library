@@ -10,17 +10,28 @@
 #include "sl/exec/algo/sync/serial.hpp"
 
 #include "sl/exec/thread/detail/atomic.hpp"
+#include <sl/meta/traits/unique.hpp>
 
 namespace sl::exec {
 
-struct [[nodiscard]] mutex_lock {
+struct [[nodiscard]] mutex_lock : meta::unique {
     constexpr explicit mutex_lock(executor& executor) : executor_{ executor } {}
+    mutex_lock(mutex_lock&& other) noexcept
+        : executor_{ other.executor_ }, is_locked_{ std::exchange(other.is_locked_, false) } {}
+    ~mutex_lock() noexcept { ASSERT(!is_locked_); }
 
-    constexpr Signal<meta::unit, meta::undefined> auto unlock() { return start_on(executor_); }
-    constexpr Signal<meta::unit, meta::undefined> auto unlock_on(executor& executor) { return start_on(executor); }
+    constexpr Signal<meta::unit, meta::undefined> auto unlock() && {
+        is_locked_ = false;
+        return start_on(executor_);
+    }
+    constexpr Signal<meta::unit, meta::undefined> auto unlock_on(executor& executor) && {
+        is_locked_ = false;
+        return start_on(executor);
+    }
 
 private:
     executor& executor_;
+    bool is_locked_ = true;
 };
 
 template <template <typename> typename Atomic = detail::atomic>
