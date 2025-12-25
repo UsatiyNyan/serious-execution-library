@@ -255,7 +255,9 @@ TEST(coro, asyncNesting) {
     constexpr std::size_t expected = 1'000'000;
     std::size_t result = 0;
 
-    coro_schedule(executor, [&result] -> async<void> { result = co_await nesting_coro(expected); }());
+    coro_schedule(executor, [](std::size_t& result) -> async<void> {
+        result = co_await nesting_coro(expected);
+    }(result));
     ASSERT_EQ(result, 0);
 
     EXPECT_EQ(executor.execute_batch(), 1);
