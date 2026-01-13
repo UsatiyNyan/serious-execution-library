@@ -261,9 +261,6 @@ private:
 
     bool un_impl(channel_node& node) & {
         std::lock_guard<Mutex> lock{ m_ };
-        if (node.intrusive_next == nullptr && node.intrusive_prev == nullptr) {
-            return false;
-        }
         DEBUG_ASSERT(std::find_if(q_.begin(), q_.end(), [&node](channel_node& x) { return &node == &x; }) != q_.end());
         std::ignore = q_.erase(&node);
         return true;
