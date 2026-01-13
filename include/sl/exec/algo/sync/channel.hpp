@@ -14,6 +14,7 @@
 #include "sl/exec/thread/detail/multiword_kcas.hpp"
 #include "sl/exec/thread/detail/mutex.hpp"
 
+#include <sl/meta/assert.hpp>
 #include <sl/meta/intrusive/list.hpp>
 #include <sl/meta/lifetime/finalizer.hpp>
 #include <sl/meta/monad/maybe.hpp>
@@ -32,6 +33,9 @@ struct channel_node : meta::intrusive_list_node<channel_node> {
 public:
     virtual ~channel_node() = default;
     [[nodiscard]] virtual tag get_tag() const& = 0;
+
+public:
+    bool is_queued = false; // protected via channel mutex
 };
 
 template <typename ValueT, typename Mutex, template <typename> typename Atomic>
@@ -81,6 +85,7 @@ public:
                 send_slot.set_error(meta::unit{});
                 return;
             } else {
+                send_node.is_queued = true;
                 q_.push_back(&send_node);
             }
         };
@@ -104,9 +109,11 @@ public:
                     try_enque();
                     break;
                 }
-                ASSERT(q_front->get_tag() == channel_node::tag::receive);
+                q_front->is_queued = false;
 
+                ASSERT(q_front->get_tag() == channel_node::tag::receive);
                 auto* receive_node = static_cast<receive_node_type*>(q_front);
+
                 if (try_fulfill_impl(send_node, *receive_node, lock)) {
                     break;
                 }
@@ -125,6 +132,7 @@ public:
                 lock.unlock();
                 receive_slot.set_error(meta::unit{});
             } else {
+                receive_node.is_queued = true;
                 q_.push_back(&receive_node);
             }
         };
@@ -143,9 +151,11 @@ public:
                     try_enque();
                     break;
                 }
-                ASSERT(q_front->get_tag() == channel_node::tag::send);
+                q_front->is_queued = false;
 
+                ASSERT(q_front->get_tag() == channel_node::tag::send);
                 auto* send_node = static_cast<send_node_type*>(q_front);
+
                 if (try_fulfill_impl(*send_node, receive_node, lock)) {
                     break;
                 }
@@ -186,6 +196,12 @@ public:
             }
         }();
         ASSERT(maybe_receive_q.map([this](const auto&) { return q_.empty(); }).value_or(true));
+
+        maybe_receive_q.map([](meta::intrusive_list<channel_node>& receive_q) {
+            for (channel_node& receive_node : receive_q) {
+                receive_node.is_queued = false;
+            }
+        });
 
         lock.unlock();
         maybe_receive_q.map([](meta::intrusive_list<channel_node>& receive_q) {
@@ -262,10 +278,15 @@ private:
 
     bool un_impl(channel_node& node) & {
         std::lock_guard<Mutex> lock{ m_ };
-        if (node.intrusive_next == nullptr && node.intrusive_prev == nullptr) {
+        if (!std::exchange(node.is_queued, false)) {
             return false;
         }
-        DEBUG_ASSERT(std::find_if(q_.begin(), q_.end(), [&node](channel_node& x) { return &node == &x; }) != q_.end());
+
+        DEBUG_ASSERT(
+            std::find_if(q_.begin(), q_.end(), [&node](channel_node& x) { return &node == &x; }) != q_.end(),
+            "not found node in q_, q_ is ",
+            q_.empty() ? "empty" : "not empty"
+        );
         std::ignore = q_.erase(&node);
         return true;
     }
