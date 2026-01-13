@@ -134,7 +134,7 @@ as a description of the source of asynchrony.
 - `make` - the beginning of execution pipeline
   - `result` - starts asynchrony from *just* a value, the simplest entrance into `signal` monad
   - `contract` - classic pair of `future ~ eager signal` and `promise ~ slot`, is one-shot
-  - `pipe` - SPSC pseudo-blocking channel, restrictive, but fast for 1-to-1 communication
+  - `schedule` - runs a function via executor, but the continuation is `inline`
 - `sched` - interactions with `executor`
   - `start_on`, `continue_on` - scheduling signals
   - `inline` - immediate executor
