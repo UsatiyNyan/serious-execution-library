@@ -6,6 +6,7 @@
 
 #include "sl/exec/coro/detail.hpp"
 
+#include <sl/meta/assert.hpp>
 #include <sl/meta/traits/unique.hpp>
 
 #include <coroutine>
@@ -122,7 +123,7 @@ struct [[nodiscard]] generator<YieldT, ReturnT>::iterator {
 
 private:
     void advance() {
-        ASSUME(self_ != nullptr);
+        ASSERT(self_ != nullptr);
         maybe_value_ = self_->next_or_throw();
         if (!maybe_value_.has_value()) {
             self_ = nullptr; // signify end

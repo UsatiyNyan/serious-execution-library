@@ -9,6 +9,7 @@
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/model/executor.hpp"
 
+#include <sl/meta/assert.hpp>
 #include <sl/meta/monad/maybe.hpp>
 
 namespace sl::exec {
@@ -20,7 +21,7 @@ struct [[nodiscard]] map_slot : slot<InputValueT, ErrorT> {
         explicit map_task(map_slot& self) : self_{ self } {}
 
         void execute() noexcept override {
-            if (!ASSUME_VAL(self_.maybe_value_.has_value())) {
+            if (!ASSERT_VAL(self_.maybe_value_.has_value())) {
                 return;
             }
             auto value = self_.functor_(std::move(self_.maybe_value_).value());

@@ -11,8 +11,7 @@
 
 #include <sl/meta/lifetime/finalizer.hpp>
 #include <sl/meta/traits/unique.hpp>
-
-#include <libassert/assert.hpp>
+#include <sl/meta/assert.hpp>
 
 namespace sl::exec {
 namespace detail {
@@ -64,19 +63,19 @@ struct [[nodiscard]] promise : meta::finalizer<promise<ValueT, ErrorT>> {
 
     void set_value(ValueT&& value) & {
         auto* const slot = std::exchange(slot_, nullptr);
-        if (ASSUME_VAL(slot != nullptr)) {
+        if (ASSERT_VAL(slot != nullptr)) {
             slot->set_value(std::move(value));
         }
     }
     void set_error(ErrorT&& error) & {
         auto* const slot = std::exchange(slot_, nullptr);
-        if (ASSUME_VAL(slot != nullptr)) {
+        if (ASSERT_VAL(slot != nullptr)) {
             slot->set_error(std::move(error));
         }
     }
     void set_null() & {
         auto* const slot = std::exchange(slot_, nullptr);
-        if (ASSUME_VAL(slot != nullptr)) {
+        if (ASSERT_VAL(slot != nullptr)) {
             slot->set_null();
         }
     }

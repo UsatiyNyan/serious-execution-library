@@ -21,6 +21,7 @@
 #include <sl/meta/traits/unique.hpp>
 
 #include <cstdint>
+#include <utility>
 
 namespace sl::exec {
 namespace detail {
@@ -113,7 +114,7 @@ public:
             break;
         }
         default:
-            UNREACHABLE();
+            std::unreachable();
         }
     }
     void receive(receive_node_type& receive_node) & {
@@ -156,7 +157,7 @@ public:
             break;
         }
         default:
-            UNREACHABLE();
+            std::unreachable();
         }
     }
     void close(slot<meta::unit, meta::unit>& close_slot) {
@@ -181,7 +182,7 @@ public:
                 return std::move(q_);
             }
             default:
-                UNREACHABLE();
+                std::unreachable();
             }
         }();
         ASSERT(maybe_receive_q.map([this](const auto&) { return q_.empty(); }).value_or(true));

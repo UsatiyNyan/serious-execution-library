@@ -18,6 +18,7 @@
 #include "sl/exec/thread/detail/atomic.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
 
+#include <sl/meta/assert.hpp>
 #include <sl/meta/intrusive/algorithm.hpp>
 #include <sl/meta/lifetime/finalizer.hpp>
 #include <sl/meta/monad/maybe.hpp>
@@ -118,7 +119,7 @@ private:
 
         std::uintptr_t state = state_.exchange(share_state_result, std::memory_order::acq_rel);
         const bool state_is_empty = state == share_state_empty;
-        ASSUME(!state_is_empty, "set_result before emit, since this is lazy impl");
+        ASSERT(!state_is_empty, "set_result before emit, since this is lazy impl");
         if (state_is_empty) {
             return;
         }

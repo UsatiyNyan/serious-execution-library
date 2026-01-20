@@ -6,6 +6,7 @@
 
 #include "sl/exec/model/concept.hpp"
 
+#include <sl/meta/assert.hpp>
 #include <sl/meta/monad/maybe.hpp>
 
 namespace sl::exec {
@@ -26,7 +27,7 @@ public:
     }
 
     void set_null() & override {
-        ASSUME(!maybe_result.has_value());
+        ASSERT(!maybe_result.has_value());
         event.set();
     }
 

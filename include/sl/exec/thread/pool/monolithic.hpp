@@ -11,9 +11,9 @@
 #include "sl/exec/thread/pool/config.hpp"
 #include "sl/exec/thread/sync/wait_group.hpp"
 
+#include <sl/meta/assert.hpp>
 #include <sl/meta/traits/unique.hpp>
 
-#include <libassert/assert.hpp>
 #include <thread>
 
 namespace sl::exec {
@@ -45,7 +45,7 @@ struct monolithic_thread_pool final
     void stop() noexcept override {
         tq_.close();
         for (std::thread& worker : workers_) {
-            if (ASSUME_VAL(worker.joinable())) {
+            if (ASSERT_VAL(worker.joinable())) {
                 worker.join();
             }
         }

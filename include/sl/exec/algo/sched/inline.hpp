@@ -8,14 +8,14 @@
 
 #include <sl/meta/type/unit.hpp>
 
-#include <libassert/assert.hpp>
+#include <sl/meta/assert.hpp>
 
 namespace sl::exec {
 namespace detail {
 
 struct inline_executor final : executor {
     constexpr void schedule(task_node* task_node) noexcept override {
-        if (ASSUME_VAL(task_node != nullptr)) {
+        if (ASSERT_VAL(task_node != nullptr)) {
             task_node->execute();
         }
     }

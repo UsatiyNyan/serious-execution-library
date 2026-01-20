@@ -9,7 +9,7 @@
 
 #include <sl/meta/traits/unique.hpp>
 
-#include <libassert/assert.hpp>
+#include <sl/meta/assert.hpp>
 
 #include <coroutine>
 

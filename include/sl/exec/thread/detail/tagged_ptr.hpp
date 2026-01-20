@@ -6,11 +6,11 @@
 
 #include "sl/exec/thread/detail/bits.hpp"
 
+#include <sl/meta/assert.hpp>
+
 #include <bit>
 #include <climits>
 #include <cstdint>
-
-#include <libassert/assert.hpp>
 
 namespace sl::exec::detail {
 

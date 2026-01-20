@@ -3,18 +3,19 @@
 //
 
 #include "sl/exec/algo/sched/manual.hpp"
-#include <libassert/assert.hpp>
+
+#include <sl/meta/assert.hpp>
 
 namespace sl::exec {
 
 manual_executor::~manual_executor() noexcept {
-    if (!ASSUME_VAL(task_queue_.empty(), "executor destroyed with unfinished tasks")) {
+    if (!ASSERT_VAL(task_queue_.empty(), "executor destroyed with unfinished tasks")) {
         stop();
     }
 }
 
 void manual_executor::schedule(task_node* task_node) noexcept {
-    if (ASSUME_VAL(task_node != nullptr)) {
+    if (ASSERT_VAL(task_node != nullptr)) {
         task_queue_.push_back(task_node);
     }
 }

@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include <libassert/assert.hpp>
+#include <sl/meta/assert.hpp>
 
 namespace sl::exec {
 

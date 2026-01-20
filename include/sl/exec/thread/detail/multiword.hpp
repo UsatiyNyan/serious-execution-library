@@ -21,7 +21,7 @@
 
 #include <sl/meta/monad/result.hpp>
 
-#include <libassert/assert.hpp>
+#include <sl/meta/assert.hpp>
 
 #include <bit>
 #include <concepts>

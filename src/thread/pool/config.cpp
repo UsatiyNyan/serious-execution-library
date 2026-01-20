@@ -4,7 +4,7 @@
 
 #include "sl/exec/thread/pool/config.hpp"
 
-#include <libassert/assert.hpp>
+#include <sl/meta/assert.hpp>
 
 #include <thread>
 

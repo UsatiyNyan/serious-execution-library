@@ -7,7 +7,7 @@
 #include <sl/meta/monad/maybe.hpp>
 #include <sl/meta/monad/result.hpp>
 
-#include <libassert/assert.hpp>
+#include <sl/meta/assert.hpp>
 
 #include <exception>
 
@@ -50,7 +50,7 @@ struct promise_result_mixin : public promise_result_mixin_base<T> {
     // ^^^ compiler hooks
 
     [[nodiscard]] return_type get_return() && noexcept {
-        ASSUME(base::maybe_return_.has_value());
+        ASSERT(base::maybe_return_.has_value());
         return_type extracted{ std::move(base::maybe_return_).value() };
         base::maybe_return_.reset();
         return extracted;

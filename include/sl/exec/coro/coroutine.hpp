@@ -6,6 +6,7 @@
 
 #include "sl/exec/coro/detail.hpp"
 
+#include <sl/meta/assert.hpp>
 #include <sl/meta/traits/unique.hpp>
 
 #include <coroutine>
@@ -86,12 +87,12 @@ struct coroutine<T>::awaiter {
     // vvv compiler hooks
     bool await_ready() noexcept { return false; }
     std::coroutine_handle<> await_suspend(std::coroutine_handle<> continuation) noexcept {
-        ASSUME(!handle_.done());
+        ASSERT(!handle_.done());
         handle_.promise().continuation = continuation;
         return handle_;
     }
     [[nodiscard]] auto await_resume() {
-        ASSUME(handle_.done());
+        ASSERT(handle_.done());
         return std::move(handle_.promise()).get_return_or_throw();
     }
     // ^^^ compiler hooks

@@ -9,7 +9,7 @@
 
 #include <sl/meta/intrusive/forward_list.hpp>
 
-#include <libassert/assert.hpp>
+#include <sl/meta/assert.hpp>
 
 namespace sl::exec::detail {
 
