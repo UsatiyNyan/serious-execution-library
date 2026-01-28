@@ -7,7 +7,9 @@
 
 namespace sl::exec::detail {
 
-SL_EXEC_DESCRIPTOR_POOL_TEMPLATE_INSTANTIATE(kcas_descriptor)
+template <>
+mw::descriptor_pool<kcas_descriptor>::descriptors_type //
+    mw::descriptor_pool<kcas_descriptor>::descriptors{};
 
 bool kcas(kcas_descriptor::immutables_type immutables) {
     const mw::pointer_type des = mw::create_new<kcas_descriptor>(kcas_descriptor::state_undecided, immutables);

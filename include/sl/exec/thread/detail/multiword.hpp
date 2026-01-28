@@ -141,11 +141,6 @@ public:
     static descriptors_type descriptors;
 };
 
-#define SL_EXEC_DESCRIPTOR_POOL_TEMPLATE_INSTANTIATE(T)          \
-    using T##_pool = ::sl::exec::detail::mw::descriptor_pool<T>; \
-    template <>                                                  \
-    T##_pool::descriptors_type T##_pool::descriptors{};
-
 // CreateNew(T, v1, v2, ...) by process p :
 //   oldseq := D{T,p}.mutables.seq
 //   D{T,p}.mutables.seq := oldseq + 1

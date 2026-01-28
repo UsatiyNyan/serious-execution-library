@@ -80,7 +80,9 @@ public: // test helpers
     static constexpr mw::state_type mask2 = 0x02;
 };
 
-SL_EXEC_DESCRIPTOR_POOL_TEMPLATE_INSTANTIATE(test_descriptor);
+template <>
+mw::descriptor_pool<test_descriptor>::descriptors_type //
+    mw::descriptor_pool<test_descriptor>::descriptors{};
 
 TEST(threadDetailMultiword, create) {
     const test_descriptor::immutables_type imm{ 42, 84 };
@@ -170,9 +172,8 @@ TEST(threadDetailMultiword, casMutableFailExpected) {
 
     const int expected_value = 0x00;
     const int new_value = 0x02;
-    const auto result = mw::cas_mutable<test_descriptor, test_descriptor::mask1 | test_descriptor::mask2>(
-        dptr, expected_value, new_value
-    );
+    const auto result = mw::cas_mutable < test_descriptor,
+               test_descriptor::mask1 | test_descriptor::mask2 > (dptr, expected_value, new_value);
 
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value(), old_value) << dptr;

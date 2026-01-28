@@ -6,7 +6,9 @@
 
 namespace sl::exec::detail {
 
-SL_EXEC_DESCRIPTOR_POOL_TEMPLATE_INSTANTIATE(dcss_descriptor)
+template <>
+mw::descriptor_pool<dcss_descriptor>::descriptors_type //
+    mw::descriptor_pool<dcss_descriptor>::descriptors{};
 
 // CreateNew(DCSSdes, a1, e1, a2, e2, n2)
 mw::pointer_type dcss_create_new(
