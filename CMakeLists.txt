@@ -42,6 +42,21 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_KCAS_MAX=${SL_EXEC_KC
 set(SL_EXEC_INTERFERENCE_SIZE 64 CACHE STRING "Interference size, set to 0 to use stdlib")
 target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_INTERFERENCE_SIZE=${SL_EXEC_INTERFERENCE_SIZE}")
 
+set(CACHE{SL_EXEC_SIM} TYPE BOOL HELP "Enable stackful coroutines for concurrency simulation" OFF)
+set(CACHE{SL_EXEC_SIM_STACK} TYPE STRING
+    HELP "What stack implementation to use for concurrency simulation: mmap, malloc"
+    "")
+if (SL_EXEC_SIM)
+    if (SL_EXEC_SIM_STACK STREQUAL "")
+        if (SL_DETECTED_OS STREQUAL "linux")
+            set(SL_EXEC_SIM_STACK "mmap")
+        else()
+            set(SL_EXEC_SIM_STACK "malloc")
+        endif()
+    endif()
+    target_sources(${PROJECT_NAME} PRIVATE "src/sim/stack/${SL_EXEC_SIM_STACK}.cpp")
+endif()
+
 if (NOT PROJECT_IS_TOP_LEVEL)
     return()
 endif ()
