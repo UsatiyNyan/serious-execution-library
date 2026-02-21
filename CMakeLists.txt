@@ -43,9 +43,12 @@ set(SL_EXEC_INTERFERENCE_SIZE 64 CACHE STRING "Interference size, set to 0 to us
 target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_INTERFERENCE_SIZE=${SL_EXEC_INTERFERENCE_SIZE}")
 
 set(CACHE{SL_EXEC_SIM} TYPE BOOL HELP "Enable stackful coroutines for concurrency simulation" OFF)
+target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_SIM=$<BOOL:${SL_EXEC_SIM}>")
+
 set(CACHE{SL_EXEC_SIM_STACK} TYPE STRING
     HELP "What stack implementation to use for concurrency simulation: mmap, malloc"
     "")
+target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_SIM_STACK_IS_${SL_EXEC_SIM_STACK}")
 if (SL_EXEC_SIM)
     if (SL_EXEC_SIM_STACK STREQUAL "")
         if (SL_DETECTED_OS STREQUAL "linux")

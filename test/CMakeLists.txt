@@ -5,3 +5,7 @@ sl_add_gtest(${PROJECT_NAME} algo)
 sl_add_gtest(${PROJECT_NAME} thread)
 sl_add_gtest(${PROJECT_NAME} coro)
 sl_add_gtest(${PROJECT_NAME} exec)
+
+if (SL_EXEC_SIM)
+    sl_add_gtest(${PROJECT_NAME} sim)
+endif()

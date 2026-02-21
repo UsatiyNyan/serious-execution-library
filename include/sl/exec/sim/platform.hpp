@@ -4,6 +4,8 @@
 
 #pragma once
 
+#if SL_EXEC_SIM
+
 #include <sl/meta/monad/result.hpp>
 
 #include <cstddef>
@@ -19,3 +21,5 @@ public:
 };
 
 } // namespace sl::exec::sim
+
+#endif

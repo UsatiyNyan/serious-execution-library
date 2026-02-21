@@ -4,6 +4,8 @@
 
 #pragma once
 
+#if SL_EXEC_SIM
+
 #include "sl/exec/sim/platform.hpp"
 #include <sl/meta/assert.hpp>
 #include <sl/meta/monad/result.hpp>
@@ -38,7 +40,8 @@ public:
     [[nodiscard]] static meta::result<stack, std::error_code> allocate(const platform& a_platform, allocate_type args);
     [[nodiscard]] std::error_code deallocate();
 
-    mem_type view() { return mem_.subspan(prot_offset_); }
+    mem_type user_page() { return mem_.subspan(prot_offset_); }
+    mem_type unsafe_prot_page() { return mem_.subspan(0, prot_offset_); }
 
 public:
     stack(const stack&) = delete;
@@ -66,3 +69,5 @@ constexpr std::size_t ceil_div(std::size_t value, std::size_t divisor) { return 
 } // namespace detail
 
 } // namespace sl::exec::sim
+
+#endif

@@ -11,3 +11,5 @@
 #include "sl/exec/coro.hpp"
 
 #include "sl/exec/thread.hpp"
+
+#include "sl/exec/sim.hpp"
