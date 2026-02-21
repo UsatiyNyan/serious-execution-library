@@ -29,7 +29,6 @@ namespace sl::exec::sim {
 //
 struct stack {
     using mem_type = std::span<std::byte>;
-    using const_mem_type = std::span<const std::byte>;
 
     struct allocate_type {
         std::size_t at_least_bytes;
@@ -39,22 +38,31 @@ public:
     [[nodiscard]] static meta::result<stack, std::error_code> allocate(const platform& a_platform, allocate_type args);
     [[nodiscard]] std::error_code deallocate();
 
-    mem_type mem() & { return mem_; }
-    const_mem_type mem() const& { return mem_; }
+    mem_type view() { return mem_.subspan(prot_offset_); }
 
 public:
     stack(const stack&) = delete;
     stack& operator=(const stack&) = delete;
     stack& operator=(stack&& other) noexcept = delete;
 
-    stack(stack&& other) noexcept : mem_{ std::exchange(other.mem_, mem_type{}) } {}
+    stack(stack&& other) noexcept
+        : mem_{ std::exchange(other.mem_, mem_type{}) }, prot_offset_{ std::exchange(other.prot_offset_, 0) } {}
     ~stack() noexcept { DEBUG_ASSERT(mem_.empty()); }
 
 private:
-    stack(mem_type a_mem) : mem_{ a_mem } { DEBUG_ASSERT(!mem_.empty()); }
+    constexpr stack(mem_type mem, std::size_t prot_offset) : mem_{ mem }, prot_offset_{ prot_offset } {
+        DEBUG_ASSERT(!mem_.empty());
+    }
 
 private:
     mem_type mem_;
+    std::size_t prot_offset_;
 };
+
+namespace detail {
+
+constexpr std::size_t ceil_div(std::size_t value, std::size_t divisor) { return (value + divisor - 1) / divisor; }
+
+} // namespace detail
 
 } // namespace sl::exec::sim

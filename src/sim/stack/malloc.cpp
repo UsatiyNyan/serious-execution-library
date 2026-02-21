@@ -13,20 +13,21 @@ meta::result<stack, std::error_code> stack::allocate(const platform& a_platform,
         return meta::err(std::make_error_code(std::errc::invalid_argument));
     }
 
-    auto* bytes = static_cast<std::byte*>(std::malloc(args.at_least_bytes));
+    const std::size_t size_bytes = detail::ceil_div(args.at_least_bytes, a_platform.page_size) * a_platform.page_size;
+    auto* bytes = static_cast<std::byte*>(std::malloc(size_bytes));
     if (bytes == nullptr) [[unlikely]] {
         return meta::err(std::make_error_code(std::errc::not_enough_memory));
     }
 
-    return stack{ mem_type{ bytes, args.at_least_bytes } };
+    return stack{ mem_type{ bytes, size_bytes }, /*prot_offset=*/0 };
 }
 
 std::error_code stack::deallocate() {
-    auto a_mem = std::exchange(mem_, mem_type{});
-    if (a_mem.empty()) {
+    auto mem = std::exchange(mem_, mem_type{});
+    if (mem.empty()) {
         return std::make_error_code(std::errc::invalid_argument);
     }
-    std::free(static_cast<void*>(a_mem.data()));
+    std::free(static_cast<void*>(mem.data()));
     return {};
 }
 
