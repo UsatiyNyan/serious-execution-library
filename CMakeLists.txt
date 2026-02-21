@@ -54,7 +54,10 @@ if (SL_EXEC_SIM)
             set(SL_EXEC_SIM_STACK "malloc")
         endif()
     endif()
-    target_sources(${PROJECT_NAME} PRIVATE "src/sim/stack/${SL_EXEC_SIM_STACK}.cpp")
+    target_sources(${PROJECT_NAME} PRIVATE
+        src/sim/platform.cpp
+        "src/sim/stack/${SL_EXEC_SIM_STACK}.cpp"
+    )
 endif()
 
 if (NOT PROJECT_IS_TOP_LEVEL)

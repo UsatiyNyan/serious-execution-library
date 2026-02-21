@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "sl/exec/sim/platform.hpp"
 #include <sl/meta/assert.hpp>
 #include <sl/meta/monad/result.hpp>
 #include <sl/meta/type/unit.hpp>
@@ -27,30 +28,33 @@ namespace sl::exec::sim {
 // }
 //
 struct stack {
-public:
+    using mem_type = std::span<std::byte>;
+    using const_mem_type = std::span<const std::byte>;
+
     struct allocate_type {
         std::size_t at_least_bytes;
     };
-    [[nodiscard]] static meta::result<stack, std::error_code> allocate(allocate_type args);
+
+public:
+    [[nodiscard]] static meta::result<stack, std::error_code> allocate(const platform& a_platform, allocate_type args);
     [[nodiscard]] std::error_code deallocate();
 
-    std::span<std::byte> mem() & { return mem_; }
-    std::span<const std::byte> mem() const& { return mem_; }
+    mem_type mem() & { return mem_; }
+    const_mem_type mem() const& { return mem_; }
 
 public:
     stack(const stack&) = delete;
     stack& operator=(const stack&) = delete;
+    stack& operator=(stack&& other) noexcept = delete;
 
-    stack(stack&&) noexcept = default;
-    stack& operator=(stack&&) noexcept = default;
-
+    stack(stack&& other) noexcept : mem_{ std::exchange(other.mem_, mem_type{}) } {}
     ~stack() noexcept { DEBUG_ASSERT(mem_.empty()); }
 
 private:
-    stack(std::span<std::byte> a_mem) : mem_{ a_mem } { DEBUG_ASSERT(!mem_.empty()); }
+    stack(mem_type a_mem) : mem_{ a_mem } { DEBUG_ASSERT(!mem_.empty()); }
 
 private:
-    std::span<std::byte> mem_;
+    mem_type mem_;
 };
 
 } // namespace sl::exec::sim
