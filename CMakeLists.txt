@@ -50,13 +50,15 @@ set(CACHE{SL_EXEC_SIM_STACK} TYPE STRING
     "")
 target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_SIM_STACK_IS_${SL_EXEC_SIM_STACK}")
 if (SL_EXEC_SIM)
-    if (SL_EXEC_SIM_STACK STREQUAL "")
+    if ("${SL_EXEC_SIM_STACK}" STREQUAL "")
+        sl_detect_os(SL_DETECTED_OS)
         if (SL_DETECTED_OS STREQUAL "linux")
             set(SL_EXEC_SIM_STACK "mmap")
         else()
             set(SL_EXEC_SIM_STACK "malloc")
         endif()
     endif()
+    message(TRACE "using SL_EXEC_SIM_STACK=${SL_EXEC_SIM_STACK}")
     target_sources(${PROJECT_NAME} PRIVATE
         src/sim/platform.cpp
         "src/sim/stack/${SL_EXEC_SIM_STACK}.cpp"
