@@ -50,8 +50,10 @@ set(CACHE{SL_EXEC_SIM_STACK} TYPE STRING
     "")
 target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_SIM_STACK_IS_${SL_EXEC_SIM_STACK}")
 if (SL_EXEC_SIM)
+    sl_detect_os(SL_DETECTED_OS)
+    sl_detect_machine_cpu(SL_DETECTED_MACHINE_CPU)
+
     if ("${SL_EXEC_SIM_STACK}" STREQUAL "")
-        sl_detect_os(SL_DETECTED_OS)
         if (SL_DETECTED_OS STREQUAL "linux")
             set(SL_EXEC_SIM_STACK "mmap")
         else()
@@ -59,9 +61,13 @@ if (SL_EXEC_SIM)
         endif()
     endif()
     message(TRACE "using SL_EXEC_SIM_STACK=${SL_EXEC_SIM_STACK}")
-    target_sources(${PROJECT_NAME} PRIVATE
+
+    enable_language(ASM)
+    target_sources(${PROJECT_NAME} PUBLIC
         src/sim/platform.cpp
+        src/sim/machine/context.cpp
         "src/sim/stack/${SL_EXEC_SIM_STACK}.cpp"
+        "src/sim/machine/context_impl_${SL_DETECTED_MACHINE_CPU}.S"
     )
 endif()
 
