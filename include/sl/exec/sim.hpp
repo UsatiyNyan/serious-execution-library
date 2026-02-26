@@ -6,3 +6,5 @@
 
 #include "sl/exec/sim/platform.hpp"
 #include "sl/exec/sim/stack.hpp"
+
+#include "sl/exec/sim/machine/context.hpp"

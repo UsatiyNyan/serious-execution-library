@@ -2,10 +2,13 @@
 // Created by usatiynyan.
 //
 
+#include "sl/exec/coro/coroutine.hpp"
+#include "sl/exec/model/task.hpp"
 #include "sl/exec/sim.hpp"
 
 #include <gtest/gtest.h>
 #include <sl/meta/lifetime/defer.hpp>
+#include <utility>
 
 namespace sl::exec::sim {
 
@@ -114,5 +117,81 @@ TEST(stack, guardPageCausesSegfault) {
     EXPECT_DEATH({ a_stack.unsafe_prot_page()[0] = std::byte{ 0 }; }, "");
 }
 #endif
+
+template <typename F>
+struct coroutine : task {
+    void resume() {
+        ASSERT(!is_done_);
+        caller_context_.switch_to(callee_context_);
+    }
+    bool is_done() const { return is_done_; }
+
+public:
+    struct handle {
+        void suspend() { self->suspend_impl(); }
+
+    public:
+        coroutine* self;
+    };
+
+private:
+    void suspend_impl() { callee_context_.switch_to(caller_context_); }
+
+public: // task
+    void execute() noexcept override {
+        try {
+            std::cout << "f" << std::endl;
+            f_(handle{ this });
+        } catch (...) {
+            PANIC("exception");
+        }
+
+        is_done_ = true;
+        suspend_impl();
+        std::unreachable();
+    }
+    void cancel() noexcept override { PANIC("cancel never should be called"); }
+
+public:
+    coroutine(stack& s, F f) : f_{ std::move(f) }, callee_context_{ machine_context::setup(s, *this) } {}
+
+private:
+    F f_;
+    machine_context callee_context_{};
+    machine_context caller_context_{};
+    bool is_done_ = false;
+};
+
+TEST(context, coroutineInitAndSwitch) {
+    std::cout << "platform" << std::endl;
+    auto plat = *ASSERT_VAL(platform::make());
+
+    std::cout << "stack" << std::endl;
+    auto s = *ASSERT_VAL(stack::allocate(plat, { .at_least_bytes = 64 * 1024 }));
+    meta::defer s_dealloc{ [&s] { ASSERT(s.deallocate() == std::error_code{}); } };
+
+    std::cout << "coroutine" << std::endl;
+    std::size_t counter = 0;
+    coroutine coro{
+        s,
+        [&counter](auto h) {
+            ++counter;
+            h.suspend();
+            ++counter;
+        },
+    };
+    EXPECT_EQ(counter, 0);
+    EXPECT_FALSE(coro.is_done());
+
+    std::cout << "resume 1" << std::endl;
+    coro.resume();
+    EXPECT_EQ(counter, 1);
+    EXPECT_FALSE(coro.is_done());
+
+    std::cout << "resume 2" << std::endl;
+    coro.resume();
+    EXPECT_EQ(counter, 2);
+    EXPECT_TRUE(coro.is_done());
+}
 
 } // namespace sl::exec::sim
