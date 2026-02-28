@@ -42,17 +42,12 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_KCAS_MAX=${SL_EXEC_KC
 set(SL_EXEC_INTERFERENCE_SIZE 64 CACHE STRING "Interference size, set to 0 to use stdlib")
 target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_INTERFERENCE_SIZE=${SL_EXEC_INTERFERENCE_SIZE}")
 
-set(CACHE{SL_EXEC_SIM} TYPE BOOL HELP "Enable stackful coroutines for concurrency simulation" OFF)
+set(SL_EXEC_SIM OFF CACHE BOOL "Enable stackful coroutines for concurrency simulation" )
 target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_SIM=$<BOOL:${SL_EXEC_SIM}>")
 
-set(CACHE{SL_EXEC_SIM_STACK} TYPE STRING
-    HELP "What stack implementation to use for concurrency simulation: mmap, malloc"
-    "")
-target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_SIM_STACK_IS_${SL_EXEC_SIM_STACK}")
+set(SL_EXEC_SIM_STACK "" CACHE STRING
+    "What stack implementation to use for concurrency simulation: mmap, malloc")
 if (SL_EXEC_SIM)
-    sl_detect_os(SL_DETECTED_OS)
-    sl_detect_machine_cpu(SL_DETECTED_MACHINE_CPU)
-
     if ("${SL_EXEC_SIM_STACK}" STREQUAL "")
         if (SL_DETECTED_OS STREQUAL "linux")
             set(SL_EXEC_SIM_STACK "mmap")
@@ -60,7 +55,8 @@ if (SL_EXEC_SIM)
             set(SL_EXEC_SIM_STACK "malloc")
         endif()
     endif()
-    message(TRACE "using SL_EXEC_SIM_STACK=${SL_EXEC_SIM_STACK}")
+    target_compile_definitions(${PROJECT_NAME} PUBLIC "SL_EXEC_SIM_STACK_IS_${SL_EXEC_SIM_STACK}")
+    message(STATUS "using SL_EXEC_SIM_STACK=${SL_EXEC_SIM_STACK}")
 
     enable_language(ASM)
     target_sources(${PROJECT_NAME} PUBLIC

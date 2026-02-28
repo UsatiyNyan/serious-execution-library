@@ -2,7 +2,6 @@
 // Created by usatiynyan.
 //
 
-#include "sl/exec/coro/coroutine.hpp"
 #include "sl/exec/model/task.hpp"
 #include "sl/exec/sim.hpp"
 
@@ -119,7 +118,7 @@ TEST(stack, guardPageCausesSegfault) {
 #endif
 
 template <typename F>
-struct coroutine : task {
+struct mc_coroutine : task {
     void resume() {
         ASSERT(!is_done_);
         caller_context_.switch_to(callee_context_);
@@ -131,7 +130,7 @@ public:
         void suspend() { self->suspend_impl(); }
 
     public:
-        coroutine* self;
+        mc_coroutine* self;
     };
 
 private:
@@ -153,7 +152,7 @@ public: // task
     void cancel() noexcept override { PANIC("cancel never should be called"); }
 
 public:
-    coroutine(stack& s, F f) : f_{ std::move(f) }, callee_context_{ machine_context::setup(s, *this) } {}
+    mc_coroutine(stack& s, F f) : f_{ std::move(f) }, callee_context_{ machine_context::setup(s, *this) } {}
 
 private:
     F f_;
@@ -172,7 +171,7 @@ TEST(context, coroutineInitAndSwitch) {
 
     std::cout << "coroutine" << std::endl;
     std::size_t counter = 0;
-    coroutine coro{
+    mc_coroutine coro{
         s,
         [&counter](auto h) {
             ++counter;
