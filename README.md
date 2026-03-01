@@ -188,6 +188,9 @@ async<...> coro(T x);
 
 # TODO
 
+- [ ] sanitizer fixes:
+    - [ ] leaks in coro await
+    - [ ] leaks in channel select
 - [ ] lock-free channel
   - [ ] lock-free list
 - [ ] slots:

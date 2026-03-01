@@ -99,12 +99,17 @@ public: // fulfillment
             return;
         }
 
-        do {
+        while (state != share_state_result) {
             node.intrusive_next = std::bit_cast<share_node<value_type, error_type>*>(state);
-        } while (state != share_state_result
-                 && !state_.compare_exchange_weak(
-                     state, std::bit_cast<std::uintptr_t>(&node), std::memory_order::release, std::memory_order::acquire
-                 ));
+            if (state_.compare_exchange_weak( //
+                    state,
+                    std::bit_cast<std::uintptr_t>(&node),
+                    std::memory_order::release,
+                    std::memory_order::acquire
+                )) {
+                break;
+            }
+        }
 
         if (state == share_state_result) {
             // exlicit copy, unfortunately

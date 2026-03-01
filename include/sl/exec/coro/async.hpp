@@ -110,7 +110,13 @@ template <typename T>
 struct async<T>::final_awaiter {
     // vvv compiler hooks
     bool await_ready() noexcept { return false; }
-    std::coroutine_handle<> await_suspend(handle_type handle) noexcept { return handle.promise().continuation; }
+    std::coroutine_handle<> await_suspend(handle_type handle) noexcept {
+        if (auto continuation = handle.promise().continuation) {
+            return continuation;
+        }
+        handle.destroy(); // TODO(@UsatiyNyan): still leaks under sanitizer ???
+        return std::noop_coroutine();
+    }
     void await_resume() noexcept {}
     // ^^^ compiler hooks
 };
