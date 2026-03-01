@@ -111,10 +111,12 @@ struct async<T>::final_awaiter {
     // vvv compiler hooks
     bool await_ready() noexcept { return false; }
     std::coroutine_handle<> await_suspend(handle_type handle) noexcept {
+        // can be noopt -> expected to be owned by something else
         if (auto continuation = handle.promise().continuation) {
             return continuation;
         }
-        handle.destroy(); // TODO(@UsatiyNyan): still leaks under sanitizer ???
+        // continuation is nullptr -> explicitly released
+        handle.destroy();
         return std::noop_coroutine();
     }
     void await_resume() noexcept {}
