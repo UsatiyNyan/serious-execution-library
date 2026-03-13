@@ -190,6 +190,8 @@ async<...> coro(T x);
 
 - [ ] sanitizer fixes:
     - [ ] leaks in channel select
+- [ ] fix channel implementation:
+    - same-select needs fixing - incorrect solution, need separate queues for recv/send
 - [ ] lock-free channel
   - [ ] lock-free list
 - [ ] slots:
