@@ -77,8 +77,6 @@ public:
         fulfill_slot(slot, std::move(maybe_result_));
     }
 
-    cancel_mixin& get_cancel_handle() & { return connection_.get_cancel_handle(); }
-
 private:
     subscribe_connection<SignalT, force_slot> connection_;
     meta::maybe<result_type> maybe_result_;
@@ -93,7 +91,7 @@ struct force_connection {
 public:
     force_connection(force_storage<SignalT, Atomic>& storage, slot<value_type, error_type>& slot)
         : storage_{ storage }, slot_{ slot } {
-        slot.intrusive_next = &storage_.get_cancel_handle();
+        // implicitly not propagating cancel into original signal
     }
 
     cancel_mixin& get_cancel_handle() & { return slot_; }
