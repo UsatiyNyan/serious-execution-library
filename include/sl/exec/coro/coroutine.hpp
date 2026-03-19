@@ -27,7 +27,7 @@ private:
     explicit coroutine(handle_type handle) : handle_{ handle } {}
 
 public:
-    ~coroutine() {
+    ~coroutine() noexcept {
         if (handle_) {
             handle_.destroy();
         }

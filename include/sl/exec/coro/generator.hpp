@@ -27,7 +27,7 @@ private:
     explicit generator(handle_type handle) : handle_{ std::move(handle) } {}
 
 public:
-    ~generator() {
+    ~generator() noexcept {
         if (handle_) {
             handle_.destroy();
         }

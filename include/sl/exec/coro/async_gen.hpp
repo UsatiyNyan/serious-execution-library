@@ -26,7 +26,7 @@ private:
     explicit async_gen(handle_type handle) : handle_{ handle } {}
 
 public:
-    ~async_gen() {
+    ~async_gen() noexcept {
         if (handle_) {
             DEBUG_ASSERT(handle_.done());
             handle_.destroy();

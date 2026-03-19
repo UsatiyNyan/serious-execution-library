@@ -10,6 +10,8 @@
 #include <sl/meta/func/lazy_eval.hpp>
 #include <sl/meta/monad/maybe.hpp>
 
+#include <memory>
+
 namespace sl::exec {
 namespace detail {
 

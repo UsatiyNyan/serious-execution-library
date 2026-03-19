@@ -87,7 +87,7 @@ public:
     arc& operator=(const arc&) = delete;
     arc& operator=(arc&&) = delete;
 
-    ~arc() {
+    ~arc() noexcept {
         if (nullptr != storage_) {
             const std::uint32_t prev = storage_->decref();
             ASSERT(prev > 0u);

@@ -12,7 +12,7 @@ namespace detail {
 template <SomeSignal SignalT>
 struct query_executor_signal {
     template <typename U>
-    using with_executor = std::pair<executor&, U>;
+    using with_executor = std::pair<U, executor&>;
 
     using value_type = with_executor<typename SignalT::value_type>;
     using error_type = with_executor<typename SignalT::error_type>;
@@ -24,10 +24,10 @@ struct query_executor_signal {
         }
 
         void set_value(typename SignalT::value_type&& value) & override {
-            slot_.set_value(value_type{ executor_, std::move(value) });
+            slot_.set_value(value_type{ std::move(value), executor_ });
         }
         void set_error(typename SignalT::error_type&& error) & override {
-            slot_.set_error(error_type{ executor_, std::move(error) });
+            slot_.set_error(error_type{ std::move(error), executor_ });
         }
         void set_null() & override { slot_.set_null(); }
 
