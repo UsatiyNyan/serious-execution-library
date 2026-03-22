@@ -1,5 +1,6 @@
 //
 // Created by usatiynyan.
+// `flatten()` breaks cancellation chain for a signal created dynamically
 //
 
 #pragma once
@@ -16,13 +17,14 @@ namespace sl::exec {
 namespace detail {
 
 template <typename SignalValueT, typename ValueT, typename ErrorT>
-struct [[nodiscard]] flatten_slot : slot<SignalValueT, ErrorT> {
-    constexpr explicit flatten_slot(slot<ValueT, ErrorT>& slot) : slot_{ slot } { slot_.intrusive_next = this; }
+struct [[nodiscard]] flatten_slot final : slot<SignalValueT, ErrorT> {
+    constexpr explicit flatten_slot(slot<ValueT, ErrorT>& slot) : slot_{ slot } {}
 
     void set_value(SignalValueT&& value) & override {
-        Connection auto& connection =
+        connection& a_connection =
             maybe_connection_.emplace(meta::lazy_eval{ [&] { return std::move(value).subscribe(slot_); } });
-        std::move(connection).emit();
+        // need to ignore cancel_handle here, otherwise - race
+        std::ignore = std::move(a_connection).emit();
     }
     void set_error(ErrorT&& error) & override { slot_.set_error(std::move(error)); }
     void set_null() & override { slot_.set_null(); }
@@ -34,15 +36,15 @@ private:
 
 template <SomeSignal SignalT, SomeSignal SignalValueT = typename SignalT::value_type>
     requires std::same_as<typename SignalT::error_type, typename SignalValueT::error_type>
-struct [[nodiscard]] flatten_signal {
+struct [[nodiscard]] flatten_signal final {
     using value_type = typename SignalValueT::value_type;
     using error_type = typename SignalT::error_type;
+    using slot_type = flatten_slot<SignalValueT, value_type, error_type>;
 
 public:
     constexpr explicit flatten_signal(SignalT&& signal) : signal_{ std::move(signal) } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && {
-        using slot_type = flatten_slot<SignalValueT, value_type, error_type>;
+    subscribe_connection<SignalT, slot_type> subscribe(slot<value_type, error_type>& slot) && {
         return subscribe_connection<SignalT, slot_type>{
             std::move(signal_),
             [&slot] { return slot_type{ slot }; },
@@ -55,7 +57,7 @@ private:
     SignalT signal_;
 };
 
-struct [[nodiscard]] flatten {
+struct [[nodiscard]] flatten final {
     template <SomeSignal SignalT>
     constexpr SomeSignal auto operator()(SignalT&& signal) && {
         return flatten_signal<SignalT>{

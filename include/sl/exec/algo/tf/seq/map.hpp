@@ -16,8 +16,8 @@ namespace sl::exec {
 namespace detail {
 
 template <typename InputValueT, typename ValueT, typename ErrorT, typename F>
-struct [[nodiscard]] map_slot : slot<InputValueT, ErrorT> {
-    struct map_task : task_node {
+struct [[nodiscard]] map_slot final : slot<InputValueT, ErrorT> {
+    struct map_task final : task_node {
         explicit map_task(map_slot& self) : self_{ self } {}
 
         void execute() noexcept override {
@@ -34,9 +34,7 @@ struct [[nodiscard]] map_slot : slot<InputValueT, ErrorT> {
     };
 
     map_slot(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
-        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {
-        slot_.intrusive_next = this;
-    }
+        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
 
     void set_value(InputValueT&& value) & override {
         maybe_value_.emplace(std::move(value));
@@ -55,7 +53,7 @@ private:
 };
 
 template <SomeSignal SignalT, typename F>
-struct [[nodiscard]] map_signal {
+struct [[nodiscard]] map_signal final {
     using value_type = std::invoke_result_t<F, typename SignalT::value_type>;
     using error_type = typename SignalT::error_type;
     using slot_type = map_slot<typename SignalT::value_type, value_type, error_type, F>;
@@ -63,7 +61,7 @@ struct [[nodiscard]] map_signal {
 public:
     constexpr map_signal(SignalT&& signal, F&& functor) : signal_{ std::move(signal) }, functor_{ std::move(functor) } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && {
+    subscribe_connection<SignalT, slot_type> subscribe(slot<value_type, error_type>& slot) && {
         executor& executor = signal_.get_executor();
         return subscribe_connection<SignalT, slot_type>{
             std::move(signal_),
@@ -79,7 +77,7 @@ private:
 };
 
 template <typename F>
-struct [[nodiscard]] map {
+struct [[nodiscard]] map final {
     constexpr explicit map(F&& functor) : functor_{ std::move(functor) } {}
 
     template <SomeSignal SignalT>
