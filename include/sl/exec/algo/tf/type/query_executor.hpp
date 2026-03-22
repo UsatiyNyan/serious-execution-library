@@ -10,18 +10,16 @@ namespace sl::exec {
 namespace detail {
 
 template <SomeSignal SignalT>
-struct query_executor_signal {
+struct query_executor_signal final {
     template <typename U>
     using with_executor = std::pair<U, executor&>;
 
     using value_type = with_executor<typename SignalT::value_type>;
     using error_type = with_executor<typename SignalT::error_type>;
 
-    struct query_executor_slot : slot<typename SignalT::value_type, typename SignalT::error_type> {
+    struct query_executor_slot final : slot<typename SignalT::value_type, typename SignalT::error_type> {
         constexpr query_executor_slot(executor& executor, slot<value_type, error_type>& slot)
-            : executor_{ executor }, slot_{ slot } {
-            slot_.intrusive_next = this;
-        }
+            : executor_{ executor }, slot_{ slot } {}
 
         void set_value(typename SignalT::value_type&& value) & override {
             slot_.set_value(value_type{ std::move(value), executor_ });
@@ -39,7 +37,7 @@ struct query_executor_signal {
 public:
     constexpr explicit query_executor_signal(SignalT&& signal) : signal_{ std::move(signal) } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && {
+    subscribe_connection<SignalT, query_executor_slot> subscribe(slot<value_type, error_type>& slot) && {
         executor& executor = signal_.get_executor();
         return subscribe_connection<SignalT, query_executor_slot>{
             std::move(signal_),
@@ -53,7 +51,7 @@ private:
     SignalT signal_;
 };
 
-struct [[nodiscard]] query_executor {
+struct [[nodiscard]] query_executor final {
     template <SomeSignal SignalT>
     constexpr SomeSignal auto operator()(SignalT&& signal) && {
         return query_executor_signal<SignalT>{ /* .signal = */ std::move(signal) };

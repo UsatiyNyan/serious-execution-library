@@ -5,7 +5,7 @@
 #pragma once
 
 #include "sl/exec/model/concept.hpp"
-#include "sl/exec/model/executor.hpp"
+#include "sl/exec/model/connection.hpp"
 
 #include <sl/meta/func/lazy_eval.hpp>
 #include <sl/meta/monad/maybe.hpp>
@@ -24,8 +24,7 @@ struct box_storage_base {
     virtual executor& get_executor() & = 0;
 
     // Connection
-    virtual cancel_mixin& get_cancel_handle() & = 0;
-    virtual void emit() && = 0;
+    virtual cancel_handle& emit() && = 0;
 };
 
 template <
@@ -42,13 +41,9 @@ struct box_storage final : box_storage_base<ValueT, ErrorT> {
     executor& get_executor() & override { return signal_.get_executor(); }
 
     // Connection
-    cancel_mixin& get_cancel_handle() & override {
+    cancel_handle& emit() && override {
         DEBUG_ASSERT(maybe_connection_.has_value());
-        return maybe_connection_.value().get_cancel_handle();
-    }
-    void emit() && override {
-        DEBUG_ASSERT(maybe_connection_.has_value());
-        std::move(maybe_connection_).value().emit();
+        return std::move(maybe_connection_).value().emit();
     }
 
 private:
@@ -59,17 +54,15 @@ private:
 } // namespace detail
 
 template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] box_connection {
+struct [[nodiscard]] box_connection final : connection {
     box_connection(std::unique_ptr<detail::box_storage_base<ValueT, ErrorT>> storage, slot<ValueT, ErrorT>& slot)
         : storage_{ std::move(storage) } {
         storage_->subscribe(slot);
     }
 
-    cancel_mixin& get_cancel_handle() & { return storage_->get_cancel_handle(); }
-
-    void emit() && {
+    cancel_handle& emit() && override {
         detail::box_storage_base<ValueT, ErrorT>& storage = *storage_;
-        std::move(storage).emit();
+        return std::move(storage).emit();
     }
 
 private:
@@ -77,7 +70,7 @@ private:
 };
 
 template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] box_signal {
+struct [[nodiscard]] box_signal final {
     using value_type = ValueT;
     using error_type = ErrorT;
 
@@ -86,7 +79,7 @@ public:
     constexpr explicit box_signal(SignalT&& signal)
         : storage_{ std::make_unique<detail::box_storage<SignalT>>(std::move(signal)) } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && {
+    box_connection<value_type, error_type> subscribe(slot<value_type, error_type>& slot) && {
         return box_connection<value_type, error_type>{ std::move(storage_), slot };
     }
     executor& get_executor() { return storage_->get_executor(); }
@@ -100,7 +93,7 @@ box_signal(SignalT&& signal) -> box_signal<typename SignalT::value_type, typenam
 
 namespace detail {
 
-struct [[nodiscard]] box {
+struct [[nodiscard]] box final {
     template <SomeSignal SignalT>
     constexpr SomeSignal auto operator()(SignalT&& signal) && {
         return box_signal{ std::move(signal) };
