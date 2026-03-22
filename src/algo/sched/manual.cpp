@@ -14,11 +14,7 @@ manual_executor::~manual_executor() noexcept {
     }
 }
 
-void manual_executor::schedule(task_node* task_node) noexcept {
-    if (ASSERT_VAL(task_node != nullptr)) {
-        task_queue_.push_back(task_node);
-    }
-}
+void manual_executor::schedule(task_node& task_node) noexcept { task_queue_.push_back(&task_node); }
 
 void manual_executor::stop() noexcept {
     for (auto& task_node : task_queue_) {
