@@ -4,20 +4,21 @@
 
 #pragma once
 
-#include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/model/concept.hpp"
+#include "sl/exec/model/connection.hpp"
 
 namespace sl::exec {
 namespace detail {
 
 template <typename F, typename ValueT, typename ErrorT>
-struct [[nodiscard]] schedule_connection : task_node {
+struct [[nodiscard]] schedule_connection final : task_node, connection {
     constexpr schedule_connection(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
         : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
 
-    cancel_mixin& get_cancel_handle() & { return slot_; }
-
-    void emit() && noexcept { executor_.schedule(this); }
+    cancel_handle& emit() && noexcept override {
+        executor_.schedule(this);
+        return dummy_cancel_handle();
+    }
 
     void execute() noexcept override {
         auto result = functor_();
@@ -36,7 +37,7 @@ private:
 };
 
 template <typename F>
-struct [[nodiscard]] schedule_signal {
+struct [[nodiscard]] schedule_signal final {
     using result_type = std::invoke_result_t<F>;
     using value_type = typename result_type::value_type;
     using error_type = typename result_type::error_type;
@@ -44,7 +45,7 @@ struct [[nodiscard]] schedule_signal {
 public:
     constexpr schedule_signal(F functor, executor& executor) : functor_{ std::move(functor) }, executor_{ executor } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && {
+    schedule_connection<F, value_type, error_type> subscribe(slot<value_type, error_type>& slot) && {
         return schedule_connection<F, value_type, error_type>{
             /* .functor = */ std::move(functor_),
             /* .slot = */ slot,

@@ -5,9 +5,10 @@
 #pragma once
 
 #include "sl/exec/algo/make/as_signal.hpp"
-#include "sl/exec/algo/sched/inline.hpp"
+#include "sl/exec/model/connection.hpp"
 
 #include <sl/meta/monad/result.hpp>
+#include <sl/meta/type/unit.hpp>
 
 #include <type_traits>
 #include <utility>
@@ -16,18 +17,17 @@ namespace sl::exec {
 namespace detail {
 
 template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] result_connection {
+struct [[nodiscard]] result_connection final : connection {
     constexpr result_connection(meta::result<ValueT, ErrorT> result, slot<ValueT, ErrorT>& slot)
         : result_{ std::move(result) }, slot_{ slot } {}
 
-    cancel_mixin& get_cancel_handle() & { return slot_; }
-
-    void emit() && noexcept {
+    cancel_handle& emit() && noexcept override {
         if (result_.has_value()) {
             slot_.set_value(std::move(result_).value());
         } else {
             slot_.set_error(std::move(result_).error());
         }
+        return dummy_cancel_handle();
     }
 
 private:
@@ -36,18 +36,18 @@ private:
 };
 
 template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] result_signal {
+struct [[nodiscard]] result_signal final {
     using value_type = ValueT;
     using error_type = ErrorT;
 
 public:
     constexpr explicit result_signal(meta::result<value_type, error_type> result) : result_{ std::move(result) } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && {
+    result_connection<value_type, error_type> subscribe(slot<value_type, error_type>& slot) && {
         return result_connection<value_type, error_type>{ std::move(result_), slot };
     }
 
-    executor& get_executor() { return exec::inline_executor(); }
+    executor& get_executor() { return inline_executor(); }
 
 private:
     meta::result<value_type, error_type> result_;
