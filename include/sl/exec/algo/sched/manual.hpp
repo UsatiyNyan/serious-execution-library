@@ -18,7 +18,7 @@ namespace sl::exec {
 struct manual_executor final : executor {
     ~manual_executor() noexcept override;
 
-    void schedule(task_node* task_node) noexcept override;
+    void schedule(task_node& a_task_node) noexcept override;
     void stop() noexcept override;
 
     // execute finite batch of currently scheduled tasks
