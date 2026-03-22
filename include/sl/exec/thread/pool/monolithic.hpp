@@ -37,9 +37,9 @@ struct monolithic_thread_pool final
         }
     }
 
-    void schedule(task_node* task_node) noexcept override {
+    void schedule(task_node& a_task_node) noexcept override {
         wg_.add(1u);
-        tq_.push(task_node);
+        tq_.push(&a_task_node);
     }
 
     void stop() noexcept override {
