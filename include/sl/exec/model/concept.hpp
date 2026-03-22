@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "sl/exec/model/connection.hpp"
 #include "sl/exec/model/executor.hpp"
 #include "sl/exec/model/slot.hpp"
 
@@ -15,27 +16,13 @@
 
 namespace sl::exec {
 
-template <typename ConnectionT>
-concept Connection = requires(ConnectionT connection) {
-    { connection.get_cancel_handle() } -> std::same_as<cancel_mixin&>;
-    std::move(connection).emit();
-};
-
-template <typename OrderedT>
-concept Ordered = requires(const OrderedT& ordered) {
-    { ordered.get_ordering() } -> std::same_as<std::uintptr_t>;
-};
-
-template <typename OrderedConnectionT>
-concept OrderedConnection = Connection<OrderedConnectionT> && Ordered<OrderedConnectionT>;
-
 template <typename SomeSignalT>
 concept SomeSignal = requires() {
     typename SomeSignalT::value_type;
     typename SomeSignalT::error_type;
 } && requires(SomeSignalT signal, slot<typename SomeSignalT::value_type, typename SomeSignalT::error_type>& i_slot) {
     { signal.get_executor() } -> std::same_as<executor&>;
-    { std::move(signal).subscribe(i_slot) } -> Connection;
+    { std::move(signal).subscribe(i_slot) } -> std::derived_from<connection>;
 };
 
 template <SomeSignal SomeSignalT>

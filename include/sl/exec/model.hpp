@@ -5,6 +5,7 @@
 #pragma once
 
 #include "sl/exec/model/concept.hpp"
+#include "sl/exec/model/connection.hpp"
 #include "sl/exec/model/executor.hpp"
 #include "sl/exec/model/slot.hpp"
 #include "sl/exec/model/syntax.hpp"

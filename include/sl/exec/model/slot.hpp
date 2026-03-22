@@ -9,19 +9,8 @@
 
 namespace sl::exec {
 
-struct cancel_mixin : meta::immovable, meta::intrusive_forward_list_node<cancel_mixin> {
-    virtual ~cancel_mixin() = default;
-
-    [[nodiscard]] virtual bool try_cancel() & {
-        if (nullptr == intrusive_next) {
-            return false;
-        }
-        return intrusive_next->downcast()->try_cancel();
-    }
-};
-
 template <typename ValueT, typename ErrorT>
-struct slot : cancel_mixin {
+struct slot {
     virtual ~slot() = default;
 
     virtual void set_value(ValueT&&) & = 0;
