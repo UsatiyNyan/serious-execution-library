@@ -5,43 +5,28 @@
 #pragma once
 
 #include "sl/exec/algo/emit/force.hpp"
-#include "sl/exec/algo/sched/inline.hpp"
-#include "sl/exec/model/concept.hpp"
-#include "sl/exec/model/syntax.hpp"
 
+#include <sl/meta/assert.hpp>
 #include <sl/meta/lifetime/finalizer.hpp>
 #include <sl/meta/traits/unique.hpp>
-#include <sl/meta/assert.hpp>
 
 namespace sl::exec {
 namespace detail {
 
 template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] promise_connection : meta::immovable {
-    explicit promise_connection(slot<ValueT, ErrorT>& a_slot) : slot_{ a_slot } {}
-
-    cancel_mixin& get_cancel_handle() & { return slot_; }
-
-    constexpr void emit() && {}
-
-private:
-    slot<ValueT, ErrorT>& slot_;
-};
-
-template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] promise_signal : meta::unique {
+struct [[nodiscard]] promise_signal final : meta::unique {
     using value_type = ValueT;
     using error_type = ErrorT;
 
 public:
     explicit promise_signal(slot<ValueT, ErrorT>** a_slot) : slot_{ a_slot } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && {
+    dummy_connection subscribe(slot<value_type, error_type>& slot) && {
         *slot_ = &slot;
-        return promise_connection{ slot };
+        return dummy_connection{};
     }
 
-    executor& get_executor() { return exec::inline_executor(); }
+    executor& get_executor() { return inline_executor(); }
 
 private:
     slot<ValueT, ErrorT>** slot_;
@@ -96,7 +81,7 @@ struct contract {
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic = detail::atomic>
 contract<ValueT, ErrorT, Atomic> make_contract() {
     slot<ValueT, ErrorT>* promise_slot = nullptr;
-    auto signal = detail::promise_signal<ValueT, ErrorT>{ &promise_slot } | force();
+    auto signal = force()(detail::promise_signal<ValueT, ErrorT>{ &promise_slot });
     return contract<ValueT, ErrorT, Atomic>{
         .f = std::move(signal),
         .p{ promise_slot },
