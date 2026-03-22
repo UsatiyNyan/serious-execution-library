@@ -14,7 +14,7 @@
 
 namespace sl::exec {
 
-struct [[nodiscard]] mutex_lock : meta::unique {
+struct [[nodiscard]] mutex_lock final : meta::unique {
     constexpr explicit mutex_lock(executor& executor) : executor_{ executor } {}
     mutex_lock(mutex_lock&& other) noexcept
         : executor_{ other.executor_ }, is_locked_{ std::exchange(other.is_locked_, false) } {}
@@ -35,7 +35,7 @@ private:
 };
 
 template <template <typename> typename Atomic = detail::atomic>
-struct [[nodiscard]] mutex {
+struct [[nodiscard]] mutex final {
     constexpr explicit mutex(executor& executor) : serial_executor_{ executor } {}
 
     constexpr Signal<mutex_lock, meta::undefined> auto lock() {
