@@ -17,7 +17,7 @@ namespace sl::exec {
 template <template <typename> typename Atomic = detail::atomic>
 struct serial_executor : executor {
 private:
-    struct serial_executor_task : task_node {
+    struct serial_executor_task final : task_node {
         constexpr explicit serial_executor_task(serial_executor& self) : self_{ self } {}
 
         void execute() noexcept override {
@@ -46,8 +46,8 @@ private:
 public:
     constexpr explicit serial_executor(executor& an_executor) : task_{ *this }, executor_{ an_executor } {}
 
-    void schedule(task_node* task_node) noexcept override {
-        batch_.push(task_node); // release task
+    void schedule(task_node& a_task_node) noexcept override {
+        batch_.push(&a_task_node); // release task
         const std::uint32_t prev_work = work_.fetch_add(1, std::memory_order::relaxed);
         if (prev_work == 0) {
             executor_.schedule(&task_);
@@ -62,9 +62,9 @@ public:
         auto* tail = meta::intrusive_forward_list_node_reverse(head);
 
         std::size_t batch_size = 0;
-        meta::intrusive_forward_list_node_for_each(tail, [&batch_size](task_node* task_node) {
+        meta::intrusive_forward_list_node_for_each(tail, [&batch_size](task_node* a_task_node) {
             ++batch_size;
-            task_node->cancel();
+            a_task_node->cancel();
         });
 
         const std::uint32_t work_before_batch = work_.fetch_sub(batch_size, std::memory_order::relaxed);
