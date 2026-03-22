@@ -13,7 +13,6 @@
 #include "sl/exec/model/syntax.hpp"
 
 #include "sl/exec/algo/emit/subscribe.hpp"
-#include "sl/exec/algo/sched/inline.hpp"
 
 #include "sl/exec/thread/detail/atomic.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
@@ -174,7 +173,7 @@ private:
 };
 
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic>
-struct [[nodiscard]] share_connection : meta::immovable {
+struct [[nodiscard]] share_connection final : connection {
     constexpr share_connection(
         detail::share_storage_base<ValueT, ErrorT, Atomic>* storage_ptr,
         slot<ValueT, ErrorT>& slot
@@ -185,12 +184,11 @@ struct [[nodiscard]] share_connection : meta::immovable {
 
     ~share_connection() { detail::share_storage_base<ValueT, ErrorT, Atomic>::try_decref(storage_ptr_); }
 
-    cancel_mixin& get_cancel_handle() & { return node_.slot_; }
-
-    void emit() && {
+    cancel_handle& emit() && override {
         auto* storage_ptr = std::exchange(storage_ptr_, nullptr);
         DEBUG_ASSERT(nullptr != storage_ptr);
         storage_ptr->emit(node_);
+        return dummy_cancel_handle();
     }
 
 private:
@@ -199,7 +197,7 @@ private:
 };
 
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic>
-struct [[nodiscard]] share_signal : meta::finalizer<share_signal<ValueT, ErrorT, Atomic>> {
+struct [[nodiscard]] share_signal final : meta::finalizer<share_signal<ValueT, ErrorT, Atomic>> {
     using value_type = ValueT;
     using error_type = ErrorT;
 
@@ -213,10 +211,10 @@ public:
         DEBUG_ASSERT(refcount > 1u);
     }
 
-    constexpr Connection auto subscribe(slot<value_type, error_type>& slot) && {
+    constexpr share_connection<value_type, error_type, Atomic> subscribe(slot<value_type, error_type>& slot) && {
         auto* storage_ptr = std::exchange(storage_ptr_, nullptr);
         DEBUG_ASSERT(nullptr != storage_ptr);
-        return share_connection{
+        return share_connection<value_type, error_type, Atomic>{
             /* .storage_ptr = */ storage_ptr,
             /* .slot = */ slot,
         };

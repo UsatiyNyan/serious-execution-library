@@ -1,5 +1,6 @@
 //
 // Created by usatiynyan.
+// NOTE: `force()` on a signal breaks propagation of `try_cancel()`
 //
 
 #pragma once
@@ -31,10 +32,10 @@ struct [[nodiscard]] force_storage {
         explicit force_slot(force_storage& self) : self_{ self } {}
 
         void set_value(value_type&& value) & override {
-            self_.set_result(result_type{ tl::in_place, std::move(value) });
+            self_.set_result(result_type{ meta::ok_tag, std::move(value) });
         }
         void set_error(error_type&& error) & override {
-            self_.set_result(result_type{ tl::unexpect, std::move(error) });
+            self_.set_result(result_type{ meta::err_tag, std::move(error) });
         }
         void set_null() & override { self_.set_result(meta::null); }
 
@@ -45,7 +46,9 @@ struct [[nodiscard]] force_storage {
 public:
     explicit force_storage(SignalT&& signal)
         : connection_{ std::move(signal), [this] { return force_slot{ *this }; } } {
-        std::move(connection_).emit();
+        // if the signal is "forced" it loses it's ability to be cancelled
+        // otherwise - it's hard to keep track of lifetimes
+        std::ignore = std::move(connection_).emit();
     }
 
     void set_result(meta::maybe<result_type> result) {
@@ -84,19 +87,18 @@ private:
 };
 
 template <SomeSignal SignalT, template <typename> typename Atomic>
-struct force_connection {
+struct force_connection final : connection {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
 public:
     force_connection(force_storage<SignalT, Atomic>& storage, slot<value_type, error_type>& slot)
-        : storage_{ storage }, slot_{ slot } {
-        // implicitly not propagating cancel into original signal
+        : storage_{ storage }, slot_{ slot } {}
+
+    cancel_handle& emit() && override {
+        storage_.set_slot(slot_);
+        return dummy_cancel_handle();
     }
-
-    cancel_mixin& get_cancel_handle() & { return slot_; }
-
-    void emit() && { storage_.set_slot(slot_); }
 
 private:
     force_storage<SignalT, Atomic>& storage_;
@@ -104,17 +106,17 @@ private:
 };
 
 template <SomeSignal SignalT, template <typename> typename Atomic>
-struct [[nodiscard]] force_signal : meta::unique {
+struct [[nodiscard]] force_signal final : meta::unique {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
     explicit force_signal(SignalT&& signal)
         : executor_{ &signal.get_executor() }, storage_{ new force_storage<SignalT, Atomic>{ std::move(signal) } } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && {
+    force_connection<SignalT, Atomic> subscribe(slot<value_type, error_type>& slot) && {
         auto* storage_ptr = std::exchange(storage_, nullptr);
         DEBUG_ASSERT(storage_ptr != nullptr);
-        return force_connection{
+        return force_connection<SignalT, Atomic>{
             /* .storage = */ *storage_ptr,
             /* .slot = */ slot,
         };
@@ -128,7 +130,7 @@ private:
 };
 
 template <template <typename> typename Atomic>
-struct [[nodiscard]] force {
+struct [[nodiscard]] force final {
     template <SomeSignal SignalT>
     constexpr SomeSignal auto operator()(SignalT&& signal) && {
         return force_signal<SignalT, Atomic>{

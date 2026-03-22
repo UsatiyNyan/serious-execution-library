@@ -18,11 +18,11 @@ struct get_slot final : slot<ValueT, ErrorT> {
 
 public:
     void set_value(ValueT&& value) & override {
-        maybe_result.emplace(tl::in_place, std::move(value));
+        maybe_result.emplace(meta::ok_tag, std::move(value));
         event.set();
     }
     void set_error(ErrorT&& error) & override {
-        maybe_result.emplace(tl::unexpect, std::move(error));
+        maybe_result.emplace(meta::err_tag, std::move(error));
         event.set();
     }
 
