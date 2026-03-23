@@ -1,6 +1,7 @@
 //
 // Created by usatiynyan.
-// TODO: resume on executor!!!
+// Expected to use with coro_schedule.
+// If coroutine is handled manually - make sure not to destroy it's frame before the awaited signal finishes executing.
 //
 
 #pragma once
@@ -18,8 +19,8 @@ namespace sl::exec {
 namespace detail {
 
 template <typename ValueT, typename ErrorT>
-struct awaiter_slot : slot<ValueT, ErrorT> {
-    struct awaiter_task : task_node {
+struct awaiter_slot final : slot<ValueT, ErrorT> {
+    struct awaiter_task final : task_node {
         explicit awaiter_task(std::coroutine_handle<> handle) : handle_{ std::move(handle) } {}
 
         void execute() noexcept override { handle_.resume(); }
@@ -54,7 +55,7 @@ private:
 };
 
 template <SomeSignal SignalT>
-struct signal_awaiter {
+struct signal_awaiter final {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
     using slot_type = awaiter_slot<value_type, error_type>;
@@ -68,11 +69,11 @@ public:
         DEBUG_ASSERT(std::holds_alternative<SignalT>(state_));
         auto signal = std::get<SignalT>(std::move(state_));
         auto& executor = signal.get_executor();
-        auto& connection = state_.template emplace<connection_type>( //
+        auto& a_connection = state_.template emplace<connection_type>( //
             std::move(signal),
             [&] { return slot_type{ std::move(handle), maybe_result_, executor }; }
         );
-        std::move(connection).emit();
+        std::ignore = std::move(a_connection).emit();
     }
     meta::result<value_type, error_type> await_resume() {
         DEBUG_ASSERT(std::holds_alternative<connection_type>(state_));

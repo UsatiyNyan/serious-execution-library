@@ -5,7 +5,6 @@
 #pragma once
 
 #include "sl/exec/algo/make/as_signal.hpp"
-#include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/coro/async.hpp"
 #include "sl/exec/model/concept.hpp"
 
@@ -16,14 +15,15 @@
 namespace sl::exec::detail {
 
 template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] async_connection {
+struct [[nodiscard]] async_connection final : connection {
 public:
     constexpr async_connection(async<ValueT> async, slot<ValueT, ErrorT>& slot, executor& executor)
         : async_{ std::move(async) }, slot_{ slot }, executor_{ executor } {}
 
-    cancel_mixin& get_cancel_handle() & { return slot_; }
-
-    void emit() && noexcept { coro_schedule(executor_, make_connection_coro(std::move(async_), slot_)); }
+    cancel_handle& emit() && noexcept override {
+        coro_schedule(executor_, make_connection_coro(std::move(async_), slot_));
+        return dummy_cancel_handle();
+    }
 
 private:
     static async<void> make_connection_coro(async<ValueT> async, slot<ValueT, ErrorT>& slot) {
@@ -49,14 +49,14 @@ private:
 };
 
 template <typename T>
-struct [[nodiscard]] async_signal {
+struct [[nodiscard]] async_signal final {
     using value_type = T;
     using error_type = std::exception_ptr;
 
 public:
     constexpr explicit async_signal(async<T> async) : async_{ std::move(async) } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && {
+    async_connection<value_type, error_type> subscribe(slot<value_type, error_type>& slot) && {
         return async_connection<value_type, error_type>{
             /* .result = */ std::move(async_),
             /* .slot = */ slot,
