@@ -13,7 +13,7 @@ namespace sl::exec {
 namespace detail {
 
 template <std::uint32_t N, template <typename> typename Atomic>
-struct [[nodiscard]] fork {
+struct [[nodiscard]] fork final {
     template <SomeSignal SignalT>
     constexpr auto operator()(SignalT&& signal) && {
         using value_type = typename SignalT::value_type;
@@ -32,7 +32,7 @@ private:
 };
 
 template <template <typename> typename Atomic>
-struct [[nodiscard]] fork_n {
+struct [[nodiscard]] fork_n final {
     constexpr explicit fork_n(std::uint32_t count) : count_{ count } {}
 
     template <SomeSignal SignalT>
