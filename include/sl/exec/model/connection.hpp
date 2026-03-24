@@ -6,6 +6,8 @@
 
 #include <sl/meta/traits/unique.hpp>
 
+#include <cstdint>
+
 namespace sl::exec {
 
 struct cancel_handle {
@@ -31,6 +33,10 @@ struct connection : meta::immovable {
 
 struct dummy_connection final : connection {
     cancel_handle& emit() && override { return dummy_cancel_handle(); }
+};
+
+struct ordered_connection : connection {
+    [[nodiscard]] virtual std::uintptr_t get_ordering() const& = 0;
 };
 
 } // namespace sl::exec

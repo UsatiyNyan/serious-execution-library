@@ -17,15 +17,13 @@
 
 #include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/algo/make/result.hpp"
-#include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/model/concept.hpp"
+#include "sl/exec/model/connection.hpp"
 #include "sl/exec/thread/detail/atomic.hpp"
 #include "sl/exec/thread/detail/multiword_kcas.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
 
-#include <numbers>
 #include <sl/meta/func/lazy_eval.hpp>
-#include <sl/meta/intrusive/forward_list.hpp>
 #include <sl/meta/lifetime/defer.hpp>
 #include <sl/meta/match/overloaded.hpp>
 #include <sl/meta/tuple/for_each.hpp>
@@ -60,13 +58,15 @@ struct select_slot : slot<ValueT, meta::unit> {
 };
 
 
-template <template <typename> typename Atomic, bool ConnectionsAreOrdered, typename ValueT, typename... SelectCaseTs>
-struct select_connection : cancel_mixin {
+template <template <typename> typename Atomic, typename ValueT, typename... SelectCaseTs>
+struct select_connection final
+    : connection
+    , cancel_handle {
     using value_type = ValueT;
     using error_type = meta::unit;
 
     template <typename SelectCase>
-    struct case_slot_type : select_slot<Atomic, typename SelectCase::signal_type::value_type> {
+    struct case_slot_type final : select_slot<Atomic, typename SelectCase::signal_type::value_type> {
         using value_type = typename SelectCase::signal_type::value_type;
         using functor_type = typename SelectCase::functor_type;
 
@@ -98,8 +98,11 @@ private:
     using connections_type = std::tuple<connection_type<SelectCaseTs>...>;
 
     template <std::size_t... Indexes>
-    static connections_type
-        make_connections(select_connection& self, std::tuple<SelectCaseTs...>&& cases, std::index_sequence<Indexes...>) {
+    static connections_type make_connections(
+        select_connection& self,
+        std::tuple<SelectCaseTs...>&& cases,
+        std::index_sequence<Indexes...>
+    ) {
         return std::make_tuple(meta::lazy_eval{ [a_case = std::move(std::get<Indexes>(cases)), &self]() mutable {
             return connection_type<SelectCaseTs>{
                 std::move(a_case.signal),
@@ -110,61 +113,62 @@ private:
         } }...);
     }
 
-    static std::array<cancel_mixin*, cases_count> make_cancel_handles(connections_type& connections) {
-        std::array<cancel_mixin*, cases_count> cancel_handles;
-        std::size_t i = 0;
-        meta::for_each([&](Connection auto& x) { cancel_handles[i++] = &x.get_cancel_handle(); }, connections);
-        ASSERT(i == cases_count);
-        return cancel_handles;
-    }
-
 public:
     select_connection(std::tuple<SelectCaseTs...>&& cases, slot<value_type, error_type>& slot)
         : connections_{ make_connections(*this, std::move(cases), std::make_index_sequence<cases_count>()) },
-          cancel_handles_{ make_cancel_handles(connections_) }, slot_{ slot } {
-        slot.intrusive_next = this;
-    }
+          slot_{ slot } {}
 
-public: // Connection
-    cancel_mixin& get_cancel_handle() & {
-        ASSERT(slot_.intrusive_next == this);
-        return slot_;
-    }
+public: // connection
+    cancel_handle& emit() && override {
+        constexpr bool connections_are_ordered =
+            (std::derived_from<ConnectionFor<typename SelectCaseTs::signal_type>, ordered_connection> && ... && true);
 
-    void emit() && {
-        if constexpr (ConnectionsAreOrdered) {
-            // if all connecitons are ordered, then we don't need to sort them
-            meta::for_each([](auto&& connection) { std::move(connection).emit(); }, std::move(connections_));
+        if constexpr (connections_are_ordered) {
+            // if all connections are ordered, then we don't need to sort them
+            std::size_t i = 0;
+            meta::for_each(
+                [&](connection&& a_connection) { cancel_handles_[i++] = &std::move(a_connection).emit(); },
+                std::move(connections_)
+            );
+            DEBUG_ASSERT(i == cases_count);
         } else {
             // otherwise, ordered connections take precedence in their declared order, before non-ordered
             // which is basically an implementation of safe "TrySelect" (see "Dining philosophers problem")
-            auto ordered_connections = std::apply(
-                [](Connection auto&... connections) {
-                    return std::array<std::variant<connection_type<SelectCaseTs>*...>, cases_count>{ &connections... };
-                },
-                connections_
-            );
-
+            std::array<std::pair<connection*, std::uintptr_t>, cases_count> ordered_connections{};
             constexpr meta::overloaded get_ordering{
-                [](const Ordered auto* ordered) { return ordered->get_ordering(); },
-                [](const auto*) { return std::numeric_limits<std::uintptr_t>::max(); },
+                [](const ordered_connection& an_ordered_connection) { return an_ordered_connection.get_ordering(); },
+                [](const connection&) { return std::numeric_limits<std::uintptr_t>::max(); },
             };
+            {
+                std::size_t i = 0;
+                meta::for_each(
+                    [&](auto& a_subscribe_connection) {
+                        ordered_connections[i++] = std::pair<connection*, std::uintptr_t>{
+                            &a_subscribe_connection,
+                            get_ordering(a_subscribe_connection.get_inner()),
+                        };
+                    },
+                    connections_
+                );
+                DEBUG_ASSERT(i == cases_count);
+            }
 
-            std::stable_sort(
-                ordered_connections.begin(),
-                ordered_connections.end(),
-                [get_ordering](const auto& x, const auto& y) {
-                    return std::visit(get_ordering, x) < std::visit(get_ordering, y);
+            std::stable_sort(ordered_connections.begin(), ordered_connections.end(), [](const auto& x, const auto& y) {
+                return x.second < y.second;
+            });
+
+            {
+                std::size_t i = 0;
+                for (auto [a_connection_ptr, _] : ordered_connections) {
+                    cancel_handles_[i++] = &std::move(*a_connection_ptr).emit();
                 }
-            );
-
-            for (auto& ordered_connection : ordered_connections) {
-                std::visit([](Connection auto* connection) { std::move(*connection).emit(); }, ordered_connection);
+                DEBUG_ASSERT(i == cases_count);
             }
         }
+        return *this;
     }
 
-public: // cancel_mixin
+public: // cancel_handle
     bool try_cancel() & override {
         if (try_check_done()) {
             return false;
@@ -173,8 +177,8 @@ public: // cancel_mixin
         std::uint32_t cancel_counter = 0;
 
         for (std::size_t i = 0; i != cancel_handles_.size(); ++i) {
-            cancel_mixin& cancel_handle = *cancel_handles_[i];
-            const bool is_cancelled = cancel_handle.try_cancel();
+            cancel_handle& a_cancel_handle = *cancel_handles_[i];
+            const bool is_cancelled = a_cancel_handle.try_cancel();
             cancel_counter += static_cast<std::uint32_t>(is_cancelled);
         }
 
@@ -248,8 +252,8 @@ private:
             if (i == excluded_index) {
                 continue;
             }
-            cancel_mixin& cancel_handle = *cancel_handles_[i];
-            const bool is_cancelled = cancel_handle.try_cancel();
+            cancel_handle& a_cancel_handle = *cancel_handles_[i];
+            const bool is_cancelled = a_cancel_handle.try_cancel();
             cancel_counter += static_cast<std::uint32_t>(is_cancelled);
         }
 
@@ -259,36 +263,31 @@ private:
 
 private:
     connections_type connections_;
-    std::array<cancel_mixin*, cases_count> cancel_handles_;
+    std::array<cancel_handle*, cases_count> cancel_handles_;
     slot<value_type, error_type>& slot_;
     alignas(hardware_destructive_interference_size) Atomic<std::uint32_t> counter_{ 0 };
     alignas(hardware_destructive_interference_size) Atomic<std::size_t> done_{ 0 }; // word-size for CAS2
 };
 
-template <template <typename> typename Atomic, bool ConnectionsAreOrdered, typename ValueT, typename... SelectCaseTs>
-struct select_connection_box {
-    using connection_type = select_connection<Atomic, ConnectionsAreOrdered, ValueT, SelectCaseTs...>;
+template <template <typename> typename Atomic, typename ValueT, typename... SelectCaseTs>
+struct select_connection_box final : connection {
+    using inner_connection_type = select_connection<Atomic, ValueT, SelectCaseTs...>;
 
 public:
     select_connection_box(std::tuple<SelectCaseTs...>&& cases, slot<ValueT, meta::unit>& slot)
-        : connection_{ std::make_unique<connection_type>(std::move(cases), slot) } {}
+        : connection_{ std::make_unique<inner_connection_type>(std::move(cases), slot) } {}
 
-    cancel_mixin& get_cancel_handle() & {
-        ASSERT(connection_);
-        return connection_->get_cancel_handle();
-    }
-
-    void emit() && {
-        auto& connection = *DEBUG_ASSERT_VAL(connection_.release());
-        std::move(connection).emit();
+    cancel_handle& emit() && override {
+        auto& a_connection = *DEBUG_ASSERT_VAL(connection_.release());
+        return std::move(a_connection).emit();
     }
 
 private:
-    std::unique_ptr<connection_type> connection_;
+    std::unique_ptr<inner_connection_type> connection_;
 };
 
-template <template <typename> typename Atomic, bool ConnectionsAreOrdered, typename ValueT, typename... SelectCaseTs>
-struct select {
+template <template <typename> typename Atomic, typename ValueT, typename... SelectCaseTs>
+struct [[nodiscard]] select final {
     using value_type = ValueT;
     using error_type = meta::unit;
     using default_case_signal = result_signal<meta::unit, meta::unit>;
@@ -304,12 +303,7 @@ public:
     template <SomeSignal NextSignalT, typename NextF, typename NextCaseT = select_case<NextSignalT, NextF>>
         requires std::same_as<typename NextCaseT::value_type, value_type>
     constexpr auto case_(NextSignalT&& signal, NextF&& functor) && {
-        return select<
-            Atomic,
-            ConnectionsAreOrdered && Ordered<ConnectionFor<NextSignalT>>,
-            ValueT,
-            SelectCaseTs...,
-            NextCaseT>{
+        return select<Atomic, ValueT, SelectCaseTs..., NextCaseT>{
             std::move(cases_),
             NextCaseT{ std::move(signal), std::move(functor) },
         };
@@ -321,22 +315,22 @@ public:
     }
 
 public: // SomeSignal
-    Connection auto subscribe(slot<value_type, error_type>& slot) && {
-        return select_connection_box<Atomic, ConnectionsAreOrdered, ValueT, SelectCaseTs...>{ std::move(cases_), slot };
+    select_connection_box<Atomic, ValueT, SelectCaseTs...> subscribe(slot<value_type, error_type>& slot) && {
+        return select_connection_box<Atomic, ValueT, SelectCaseTs...>{ std::move(cases_), slot };
     }
 
-    executor& get_executor() & { return exec::inline_executor(); }
+    executor& get_executor() & { return inline_executor(); }
 
 private:
     std::tuple<SelectCaseTs...> cases_;
 };
 
 template <template <typename> typename Atomic>
-struct select_start {
+struct [[nodiscard]] select_start final {
     template <SomeSignal SomeSignalT, SelectFunctorFor<SomeSignalT> F>
     auto case_(SomeSignalT&& signal, F&& functor) {
         using case_type = select_case<SomeSignalT, F>;
-        return select<Atomic, Ordered<ConnectionFor<SomeSignalT>>, typename case_type::value_type, case_type>{
+        return select<Atomic, typename case_type::value_type, case_type>{
             case_type{ std::move(signal), std::move(functor) },
         };
     }

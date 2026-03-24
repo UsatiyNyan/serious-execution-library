@@ -29,6 +29,7 @@ struct [[nodiscard]] subscribe_connection : connection {
     cancel_handle& emit() && override { return std::move(connection_).emit(); }
 
     ISlotFor<SignalT>& get_slot() & { return slot_; }
+    const ConnectionFor<SignalT>& get_inner() const& { return connection_; }
 
 private:
     SlotT slot_;
