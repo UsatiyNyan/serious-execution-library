@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include "sl/exec/algo/sched/inline.hpp"
 #include "sl/exec/algo/sync/select.hpp"
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/thread/detail/arc.hpp"
@@ -21,6 +20,7 @@
 #include <sl/meta/monad/result.hpp>
 #include <sl/meta/traits/unique.hpp>
 
+#include <bit>
 #include <cstdint>
 #include <utility>
 
@@ -304,45 +304,41 @@ struct [[nodiscard]] channel_send_signal {
     using value_type = meta::unit;
     using error_type = meta::unit;
 
-    struct [[nodiscard]] connection_type : cancel_mixin {
-        static constexpr std::uintptr_t ordering_offset = 1;
-
+    struct [[nodiscard]] connection_type final
+        : ordered_connection
+        , cancel_handle {
     public:
         connection_type(ValueT&& value, slot<value_type, error_type>& slot, impl_type& impl)
-            : node_{ std::move(value), slot }, impl_{ impl } {
-            slot.intrusive_next = this;
-        }
+            : node_{ std::move(value), slot }, impl_{ impl } {}
 
         connection_type(ValueT&& value, select_slot<Atomic, value_type>& select_slot, impl_type& impl)
-            : node_{ std::move(value), select_slot }, impl_{ impl } {
-            select_slot.intrusive_next = this;
+            : node_{ std::move(value), select_slot }, impl_{ impl } {}
+
+    public: // ordered_connection
+        cancel_handle& emit() && override {
+            impl_.send(node_);
+            return *this;
         }
+        std::uintptr_t get_ordering() const& override { return std::bit_cast<std::uintptr_t>(&impl_); }
 
-    public: // Connection
-        cancel_mixin& get_cancel_handle() & { return *this; }
-        void emit() && { impl_.send(node_); }
-
-    public: // Ordered
-        std::uintptr_t get_ordering() const& { return static_cast<std::uintptr_t>(&impl_); }
-
-    public: // cancel_mixin
+    public: // cancel_handle
         bool try_cancel() & override { return impl_.unsend(node_); }
 
     private:
-        impl_type::send_node_type node_;
+        typename impl_type::send_node_type node_;
         impl_type& impl_;
     };
 
 public:
     constexpr channel_send_signal(ValueT&& value, impl_type& impl) : value_{ std::move(value) }, impl_{ impl } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && {
+    connection_type subscribe(slot<value_type, error_type>& slot) && {
         return connection_type{ std::move(value_), slot, impl_ };
     }
-    OrderedConnection auto subscribe(select_slot<Atomic, value_type>& select_slot) && {
+    connection_type subscribe(select_slot<Atomic, value_type>& select_slot) && {
         return connection_type{ std::move(value_), select_slot, impl_ };
     }
-    executor& get_executor() & { return exec::inline_executor(); }
+    executor& get_executor() & { return inline_executor(); }
 
 private:
     ValueT value_;
@@ -356,42 +352,38 @@ struct [[nodiscard]] channel_receive_signal {
     using value_type = ValueT;
     using error_type = meta::unit;
 
-    struct [[nodiscard]] connection_type : cancel_mixin {
-        static constexpr std::uintptr_t ordering_offset = 0;
-
+    struct [[nodiscard]] connection_type final
+        : ordered_connection
+        , cancel_handle {
     public:
-        connection_type(slot<value_type, error_type>& slot, impl_type& impl) : node_{ slot }, impl_{ impl } {
-            slot.intrusive_next = this;
-        }
+        connection_type(slot<value_type, error_type>& slot, impl_type& impl) : node_{ slot }, impl_{ impl } {}
 
         connection_type(select_slot<Atomic, value_type>& select_slot, impl_type& impl)
-            : node_{ select_slot }, impl_{ impl } {
-            select_slot.intrusive_next = this;
+            : node_{ select_slot }, impl_{ impl } {}
+
+    public: // ordered_connection
+        cancel_handle& emit() && override {
+            impl_.receive(node_);
+            return *this;
         }
+        std::uintptr_t get_ordering() const& override { return std::bit_cast<std::uintptr_t>(&impl_); }
 
-    public: // Connection
-        cancel_mixin& get_cancel_handle() & { return *this; }
-        void emit() && { impl_.receive(node_); }
-
-    public: // Ordered
-        std::uintptr_t get_ordering() const& { return static_cast<std::uintptr_t>(&impl_) + ordering_offset; }
-
-    public: // cancel_mixin
+    public: // cancel_handle
         bool try_cancel() & override { return impl_.unreceive(node_); }
 
     private:
-        impl_type::receive_node_type node_;
+        typename impl_type::receive_node_type node_;
         impl_type& impl_;
     };
 
 public:
     constexpr explicit channel_receive_signal(impl_type& impl) : impl_{ impl } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && { return connection_type{ slot, impl_ }; }
-    OrderedConnection auto subscribe(select_slot<Atomic, value_type>& select_slot) && {
+    connection_type subscribe(slot<value_type, error_type>& slot) && { return connection_type{ slot, impl_ }; }
+    connection_type subscribe(select_slot<Atomic, value_type>& select_slot) && {
         return connection_type{ select_slot, impl_ };
     }
-    executor& get_executor() & { return exec::inline_executor(); }
+    executor& get_executor() & { return inline_executor(); }
 
 private:
     impl_type& impl_;
@@ -404,14 +396,14 @@ struct [[nodiscard]] channel_close_signal {
     using value_type = meta::unit;
     using error_type = meta::unit;
 
-    struct [[nodiscard]] connection_type : cancel_mixin {
-        connection_type(slot<value_type, error_type>& slot, impl_type& impl) : slot_{ slot }, impl_{ impl } {
-            slot.intrusive_next = this;
-        }
+    struct [[nodiscard]] connection_type final : connection {
+        connection_type(slot<value_type, error_type>& slot, impl_type& impl) : slot_{ slot }, impl_{ impl } {}
 
-    public: // Connection
-        cancel_mixin& get_cancel_handle() & { return *this; }
-        void emit() && { impl_.close(slot_); }
+    public: // connection
+        cancel_handle& emit() && override {
+            impl_.close(slot_);
+            return dummy_cancel_handle();
+        }
 
     private:
         slot<value_type, error_type>& slot_;
@@ -421,7 +413,7 @@ struct [[nodiscard]] channel_close_signal {
 public:
     constexpr explicit channel_close_signal(impl_type& impl) : impl_{ impl } {}
 
-    Connection auto subscribe(slot<value_type, error_type>& slot) && { return connection_type{ slot, impl_ }; }
+    connection_type subscribe(slot<value_type, error_type>& slot) && { return connection_type{ slot, impl_ }; }
     executor& get_executor() & { return exec::inline_executor(); }
 
 private:
@@ -430,7 +422,7 @@ private:
 } // namespace detail
 
 template <typename ValueT, typename Mutex = detail::mutex, template <typename> typename Atomic = detail::atomic>
-struct [[nodiscard]] channel {
+struct [[nodiscard]] channel final {
     constexpr Signal<meta::unit, meta::unit> auto send(ValueT&& value) & {
         return detail::channel_send_signal<ValueT, Mutex, Atomic>{ std::move(value), impl_ };
     }
