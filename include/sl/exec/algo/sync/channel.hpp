@@ -27,149 +27,136 @@
 namespace sl::exec {
 namespace detail {
 
-struct channel_node : meta::intrusive_list_node<channel_node> {
-    enum class tag { send, receive };
-
-public:
-    virtual ~channel_node() = default;
-    [[nodiscard]] virtual tag get_tag() const& = 0;
-
-public:
-    bool is_queued = false; // protected via channel mutex
-};
-
 template <typename ValueT, typename Mutex, template <typename> typename Atomic>
 struct [[nodiscard]] channel_impl {
-    struct send_node_type : channel_node {
-        tag get_tag() const& { return tag::send; }
+    struct channel_node : meta::intrusive_list_node<channel_node> {
+        virtual ~channel_node() = default;
 
-        send_node_type(ValueT&& value, slot<meta::unit, meta::unit>& slot)
-            : value_{ std::move(value) }, slot_{ slot } {}
+    public:
+        channel_impl* queued_in = nullptr; // protected via channel mutex
+        Atomic<std::size_t>* select_done = nullptr;
+    };
 
-        send_node_type(ValueT&& value, select_slot<Atomic, meta::unit>& select_slot)
-            : value_{ std::move(value) }, select_{ select_slot }, slot_{ select_slot } {}
+    struct send_node : channel_node {
+        send_node(ValueT&& value, slot<meta::unit, meta::unit>& slot) : value_{ std::move(value) }, slot_{ slot } {}
+
+        send_node(ValueT&& value, select_slot<Atomic, meta::unit>& select_slot)
+            : value_{ std::move(value) }, slot_{ select_slot }, select_{ select_slot } {
+            channel_node::select_done = &select_slot.get_done();
+        }
 
         ValueT& get_value() & { return value_; }
-        meta::maybe<select_slot<Atomic, meta::unit>&>& get_select() & { return select_; }
         slot<meta::unit, meta::unit>& get_slot() & { return slot_; }
+        meta::maybe<select_slot<Atomic, meta::unit>&>& get_select() & { return select_; }
 
     private:
         ValueT value_;
-        meta::maybe<select_slot<Atomic, meta::unit>&> select_{};
         slot<meta::unit, meta::unit>& slot_;
+        meta::maybe<select_slot<Atomic, meta::unit>&> select_ = meta::null;
     };
 
-    struct receive_node_type : channel_node {
-        tag get_tag() const& { return tag::receive; }
+    struct recv_node : channel_node {
+        explicit recv_node(slot<ValueT, meta::unit>& slot) : slot_{ slot } {}
 
-        explicit receive_node_type(slot<ValueT, meta::unit>& slot) : slot_{ slot } {}
+        explicit recv_node(select_slot<Atomic, ValueT>& select_slot) : slot_{ select_slot }, select_{ select_slot } {
+            channel_node::select_done = &select_slot.get_done();
+        }
 
-        explicit receive_node_type(select_slot<Atomic, ValueT>& select_slot)
-            : select_{ select_slot }, slot_{ select_slot } {}
-
-        meta::maybe<select_slot<Atomic, ValueT>&>& get_select() & { return select_; }
         slot<ValueT, meta::unit>& get_slot() & { return slot_; }
+        meta::maybe<select_slot<Atomic, ValueT>&>& get_select() & { return select_; }
 
     private:
-        meta::maybe<select_slot<Atomic, ValueT>&> select_{};
         slot<ValueT, meta::unit>& slot_;
+        meta::maybe<select_slot<Atomic, ValueT>&> select_ = meta::null;
     };
 
 public:
-    void send(send_node_type& send_node) & {
+    void send(send_node& a_node) & {
         std::unique_lock<Mutex> lock{ m_ };
-        const auto try_enque = [&] {
-            if (is_closed_) {
-                slot<meta::unit, meta::unit>& send_slot = send_node.get_slot();
-                lock.unlock();
-                send_slot.set_error(meta::unit{});
-                return;
-            } else {
-                send_node.is_queued = true;
-                q_.push_back(&send_node);
-            }
-        };
 
-        channel_node* q_back = q_.back();
-
-        if (q_back == nullptr) {
-            try_enque();
+        if (is_closed_) {
+            slot<meta::unit, meta::unit>& send_slot = a_node.get_slot();
+            lock.unlock();
+            send_slot.set_error(meta::unit{});
             return;
         }
 
-        switch (q_back->get_tag()) {
-        case channel_node::tag::send: {
-            try_enque();
-            break;
-        }
-        case channel_node::tag::receive: {
-            while (true) {
-                channel_node* q_front = q_.pop_front();
-                if (q_front == nullptr) {
-                    try_enque();
-                    break;
-                }
-                q_front->is_queued = false;
-
-                ASSERT(q_front->get_tag() == channel_node::tag::receive);
-                auto* receive_node = static_cast<receive_node_type*>(q_front);
-
-                if (try_fulfill_impl(send_node, *receive_node, lock)) {
-                    break;
-                }
-            }
-            break;
-        }
-        default:
-            std::unreachable();
-        }
-    }
-    void receive(receive_node_type& receive_node) & {
-        std::unique_lock<Mutex> lock{ m_ };
-        const auto try_enque = [&] {
-            if (is_closed_) {
-                slot<ValueT, meta::unit>& receive_slot = receive_node.get_slot();
-                lock.unlock();
-                receive_slot.set_error(meta::unit{});
-            } else {
-                receive_node.is_queued = true;
-                q_.push_back(&receive_node);
-            }
-        };
-
-        channel_node* q_back = q_.back();
-        if (q_back == nullptr) {
-            try_enque();
+        if (recv_node* recv_back = recvq_.back(); //
+            recv_back == nullptr || is_same_select(a_node, *recv_back)) {
+            enqueue_impl(sendq_, a_node);
             return;
         }
 
-        switch (q_back->get_tag()) {
-        case channel_node::tag::send: {
-            while (true) {
-                channel_node* q_front = q_.pop_front();
-                if (q_front == nullptr) {
-                    try_enque();
-                    break;
-                }
-                q_front->is_queued = false;
-
-                ASSERT(q_front->get_tag() == channel_node::tag::send);
-                auto* send_node = static_cast<send_node_type*>(q_front);
-
-                if (try_fulfill_impl(*send_node, receive_node, lock)) {
-                    break;
-                }
+        while (true) {
+            recv_node* a_recv_node = recvq_.pop_front();
+            if (a_recv_node == nullptr) {
+                enqueue_impl(sendq_, a_node);
+                break;
             }
-            break;
-        }
-        case channel_node::tag::receive: {
-            try_enque();
-            break;
-        }
-        default:
-            std::unreachable();
+            a_recv_node->queued_in = nullptr;
+            if (try_fulfill_impl(a_node, *a_recv_node, lock)) {
+                // unlocked
+                break;
+            }
+            // kcas failed - handle popped recv_node
+            if (a_recv_node->select_done != nullptr
+                && kcas_read(*a_recv_node->select_done) != 0) {
+                // recv's select is done, increment its counter
+                a_recv_node->get_select()->set_null_skip_done();
+            } else {
+                // recv's select is NOT done (kcas failed due to incoming's select)
+                // put recv back at front, enqueue incoming at back for cancellation
+                a_recv_node->queued_in = this;
+                recvq_.push_front(a_recv_node);
+                enqueue_impl(sendq_, a_node);
+                break;
+            }
         }
     }
+
+    void receive(recv_node& a_node) & {
+        std::unique_lock<Mutex> lock{ m_ };
+
+        if (is_closed_) {
+            slot<ValueT, meta::unit>& receive_slot = a_node.get_slot();
+            lock.unlock();
+            receive_slot.set_error(meta::unit{});
+            return;
+        }
+
+        if (send_node* send_back = sendq_.back(); //
+            send_back == nullptr || is_same_select(*send_back, a_node)) {
+            enqueue_impl(recvq_, a_node);
+            return;
+        }
+
+        while (true) {
+            send_node* a_send_node = sendq_.pop_front();
+            if (a_send_node == nullptr) {
+                enqueue_impl(recvq_, a_node);
+                break;
+            }
+            a_send_node->queued_in = nullptr;
+            if (try_fulfill_impl(*a_send_node, a_node, lock)) {
+                // unlocked
+                break;
+            }
+            // kcas failed - handle popped send_node
+            if (a_send_node->select_done != nullptr
+                && kcas_read(*a_send_node->select_done) != 0) {
+                // send's select is done, increment its counter
+                a_send_node->get_select()->set_null_skip_done();
+            } else {
+                // send's select is NOT done (kcas failed due to incoming's select)
+                // put send back at front, enqueue incoming at back for cancellation
+                a_send_node->queued_in = this;
+                sendq_.push_front(a_send_node);
+                enqueue_impl(recvq_, a_node);
+                break;
+            }
+        }
+    }
+
     void close(slot<meta::unit, meta::unit>& close_slot) {
         std::unique_lock<Mutex> lock{ m_ };
         const bool was_closed = std::exchange(is_closed_, true);
@@ -179,120 +166,112 @@ public:
             return;
         }
 
-        auto maybe_receive_q = [&] -> meta::maybe<meta::intrusive_list<channel_node>> {
-            channel_node* q_back = q_.back();
-            if (q_back == nullptr) {
-                return meta::null;
-            }
-            switch (q_back->get_tag()) {
-            case channel_node::tag::send:
-                // won't cancel active send-s
-                return meta::null;
-            case channel_node::tag::receive: {
-                return std::move(q_);
-            }
-            default:
-                std::unreachable();
-            }
-        }();
-        ASSERT(maybe_receive_q.map([this](const auto&) { return q_.empty(); }).value_or(true));
+        auto pending_sends = std::move(sendq_);
+        auto pending_recvs = std::move(recvq_);
 
-        maybe_receive_q.map([](meta::intrusive_list<channel_node>& receive_q) {
-            for (channel_node& receive_node : receive_q) {
-                receive_node.is_queued = false;
-            }
-        });
+        for (send_node& node : pending_sends) {
+            node.queued_in = nullptr;
+        }
+        for (recv_node& node : pending_recvs) {
+            node.queued_in = nullptr;
+        }
 
         lock.unlock();
-        maybe_receive_q.map([](meta::intrusive_list<channel_node>& receive_q) {
-            for (channel_node& receive_node : receive_q) {
-                DEBUG_ASSERT(receive_node.get_tag() == channel_node::tag::receive);
-                slot<ValueT, meta::unit>& receive_slot = static_cast<receive_node_type&>(receive_node).get_slot();
-                receive_slot.set_error(meta::unit{});
-            }
-        });
+
+        for (send_node& node : pending_sends) {
+            node.get_slot().set_error(meta::unit{});
+        }
+        for (recv_node& node : pending_recvs) {
+            node.get_slot().set_error(meta::unit{});
+        }
+
         close_slot.set_value(meta::unit{});
     }
 
-    [[nodiscard]] bool unsend(send_node_type& send_node) & { return un_impl(send_node); }
-    [[nodiscard]] bool unreceive(receive_node_type& receive_node) & { return un_impl(receive_node); }
+    [[nodiscard]] bool unsend(send_node& a_node) & { return un_impl(sendq_, a_node); }
+    [[nodiscard]] bool unreceive(recv_node& a_node) & { return un_impl(recvq_, a_node); }
 
 private:
-    [[nodiscard]] static bool
-        try_fulfill_impl(send_node_type& send_node, receive_node_type& receive_node, std::unique_lock<Mutex>& lock) {
-        if (send_node.get_select().has_value() && receive_node.get_select().has_value()) {
-            auto& send_select = send_node.get_select().value();
-            auto& receive_select = receive_node.get_select().value();
-            auto& send_done = send_select.get_done();
-            auto& receive_done = receive_select.get_done();
-            const bool distinct_selects = &send_done != &receive_done;
+    static bool is_same_select(send_node& a_send_node, recv_node& a_recv_node) {
+        return a_send_node.select_done != nullptr && a_send_node.select_done == a_recv_node.select_done;
+    }
 
-            const bool success = distinct_selects
+    [[nodiscard]] static bool
+        try_fulfill_impl(send_node& a_send_node, recv_node& a_recv_node, std::unique_lock<Mutex>& lock) {
+        if (a_send_node.select_done != nullptr && a_recv_node.select_done != nullptr) {
+            ASSERT(!is_same_select(a_send_node, a_recv_node));
+            const bool success = !is_same_select(a_send_node, a_recv_node)
                                  && kcas(
-                                     kcas_arg<std::size_t>{ .a = send_done, .e = 0, .n = 1 },
-                                     kcas_arg<std::size_t>{ .a = receive_done, .e = 0, .n = 1 }
+                                     kcas_arg<std::size_t>{ .a = a_send_node.select_done, .e = 0, .n = 1 },
+                                     kcas_arg<std::size_t>{ .a = a_recv_node.select_done, .e = 0, .n = 1 }
                                  );
 
             if (success) {
                 lock.unlock();
-                receive_select.set_value_skip_done(std::move(send_node.get_value()));
-                send_select.set_value_skip_done(meta::unit{});
+                a_recv_node.get_select()->set_value_skip_done(std::move(a_send_node.get_value()));
+                a_send_node.get_select()->set_value_skip_done(meta::unit{});
             }
 
             return success;
         }
 
-        if (send_node.get_select().has_value()) {
-            auto& send_select = send_node.get_select().value();
-
-            const bool success = kcas(kcas_arg<std::size_t>{ .a = send_select.get_done(), .e = 0, .n = 1 });
+        if (a_send_node.select_done != nullptr) {
+            const bool success = kcas(kcas_arg<std::size_t>{ .a = a_send_node.select_done, .e = 0, .n = 1 });
 
             if (success) {
                 lock.unlock();
-                receive_node.get_slot().set_value(std::move(send_node.get_value()));
-                send_select.set_value_skip_done(meta::unit{});
+                a_recv_node.get_slot().set_value(std::move(a_send_node.get_value()));
+                a_send_node.get_select()->set_value_skip_done(meta::unit{});
             }
 
             return success;
         }
 
-        if (receive_node.get_select().has_value()) {
-            auto& receive_select = receive_node.get_select().value();
-            const bool success = kcas(kcas_arg<std::size_t>{ .a = receive_select.get_done(), .e = 0, .n = 1 });
+        if (a_recv_node.select_done != nullptr) {
+            const bool success = kcas(kcas_arg<std::size_t>{ .a = a_recv_node.select_done, .e = 0, .n = 1 });
 
             if (success) {
                 lock.unlock();
-                receive_select.set_value_skip_done(std::move(send_node.get_value()));
-                send_node.get_slot().set_value(meta::unit{});
+                a_recv_node.get_select()->set_value_skip_done(std::move(a_send_node.get_value()));
+                a_send_node.get_slot().set_value(meta::unit{});
             }
 
             return success;
         }
 
         lock.unlock();
-        receive_node.get_slot().set_value(std::move(send_node.get_value()));
-        send_node.get_slot().set_value(meta::unit{});
+        a_recv_node.get_slot().set_value(std::move(a_send_node.get_value()));
+        a_send_node.get_slot().set_value(meta::unit{});
 
         return true;
     }
 
-    bool un_impl(channel_node& node) & {
+    template <typename Q>
+    void enqueue_impl(Q& q, channel_node& a_node) {
+        a_node.queued_in = this;
+        q.push_back(&a_node);
+    }
+
+    template <typename Q>
+    bool un_impl(Q& q, channel_node& node) {
         std::lock_guard<Mutex> lock{ m_ };
-        if (!std::exchange(node.is_queued, false)) {
+        if (node.queued_in == nullptr) {
             return false;
         }
-
+        DEBUG_ASSERT(node.queued_in == this);
         DEBUG_ASSERT(
-            std::find_if(q_.begin(), q_.end(), [&node](channel_node& x) { return &node == &x; }) != q_.end(),
+            std::find_if(q.begin(), q.end(), [&node](channel_node& x) { return &node == &x; }) != q.end(),
             "not found node in q_, q_ is ",
-            q_.empty() ? "empty" : "not empty"
+            q.empty() ? "empty" : "not empty"
         );
-        std::ignore = q_.erase(&node);
+        std::ignore = q.erase(&node);
+        node.queued_in = nullptr;
         return true;
     }
 
 private:
-    meta::intrusive_list<channel_node> q_;
+    meta::intrusive_list<send_node> sendq_;
+    meta::intrusive_list<recv_node> recvq_;
     bool is_closed_ = false;
     Mutex m_{};
 };
@@ -325,7 +304,7 @@ struct [[nodiscard]] channel_send_signal {
         bool try_cancel() & override { return impl_.unsend(node_); }
 
     private:
-        typename impl_type::send_node_type node_;
+        typename impl_type::send_node node_;
         impl_type& impl_;
     };
 
@@ -372,7 +351,7 @@ struct [[nodiscard]] channel_receive_signal {
         bool try_cancel() & override { return impl_.unreceive(node_); }
 
     private:
-        typename impl_type::receive_node_type node_;
+        typename impl_type::recv_node node_;
         impl_type& impl_;
     };
 
@@ -414,7 +393,7 @@ public:
     constexpr explicit channel_close_signal(impl_type& impl) : impl_{ impl } {}
 
     connection_type subscribe(slot<value_type, error_type>& slot) && { return connection_type{ slot, impl_ }; }
-    executor& get_executor() & { return exec::inline_executor(); }
+    executor& get_executor() & { return inline_executor(); }
 
 private:
     impl_type& impl_;

@@ -55,8 +55,8 @@ struct select_slot : slot<ValueT, meta::unit> {
     virtual ~select_slot() = default;
     [[nodiscard]] virtual Atomic<std::size_t>& get_done() & = 0;
     virtual void set_value_skip_done(ValueT&& value) & = 0;
+    virtual void set_null_skip_done() & = 0;
 };
-
 
 template <template <typename> typename Atomic, typename ValueT, typename... SelectCaseTs>
 struct select_connection final
@@ -78,12 +78,13 @@ struct select_connection final
             self_.set_value_impl</*CheckDone=*/true>(std::move(value), std::move(functor_), index_);
         }
         void set_error(meta::unit&&) & override { self_.set_error_impl(); }
-        void set_null() & override { self_.set_null_impl(); }
+        void set_null() & override { self_.set_null_impl</*CheckDone=*/true>(); }
 
         Atomic<std::size_t>& get_done() & override { return self_.done_; }
         void set_value_skip_done(value_type&& value) & override {
             self_.set_value_impl</*CheckDone=*/false>(std::move(value), std::move(functor_), index_);
         }
+        void set_null_skip_done() & override { self_.set_null_impl</*CheckDone=*/false>(); }
 
     private:
         functor_type functor_;
@@ -197,7 +198,7 @@ private:
         return is_last;
     }
 
-    [[nodiscard]] bool try_check_done() { return !kcas(kcas_arg<std::size_t>{ .a = done_, .e = 0, .n = 1 }); }
+    [[nodiscard]] bool try_check_done() { return !kcas(kcas_arg<std::size_t>{ .a = &done_, .e = 0, .n = 1 }); }
 
     template <bool CheckDone, typename CaseValueT, typename CaseF>
     void set_value_impl(CaseValueT&& case_value, CaseF&& case_functor, std::size_t index) & {
@@ -232,6 +233,7 @@ private:
         slot_.set_error(meta::unit{});
     }
 
+    template <bool CheckDone>
     void set_null_impl() & {
         const bool is_last = increment_and_check();
         if (!is_last) {
@@ -239,10 +241,13 @@ private:
         }
         meta::defer cleanup{ [this] { delete this; } };
 
-        if (try_check_done()) {
-            return;
+        if constexpr (CheckDone) {
+            if (try_check_done()) {
+                return;
+            }
+            slot_.set_null();
         }
-        slot_.set_null();
+        // if !CheckDone, done_ is already set, just delete via defer
     }
 
     void try_cancel_beside(std::size_t excluded_index) {
