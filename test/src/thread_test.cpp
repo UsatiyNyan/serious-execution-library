@@ -375,7 +375,7 @@ TEST(threadDetailKcas, singleSuccessfulKcas) {
     int old_value = 1234;
     int new_value = 4321;
     detail::atomic<int*> a{ &old_value };
-    const bool success = kcas(kcas_arg{ a, &old_value, &new_value });
+    const bool success = kcas(kcas_arg{ &a, &old_value, &new_value });
     ASSERT_TRUE(success);
     ASSERT_EQ(a.load(), &new_value);
     ASSERT_EQ(4321, new_value);
@@ -386,7 +386,7 @@ TEST(threadDetailKcas, singleFailedKcas) {
     int incorrect = 9999;
     int new_value = 4321;
     detail::atomic<int*> a{ &old_value };
-    const bool success = kcas(kcas_arg{ a, &incorrect, &new_value });
+    const bool success = kcas(kcas_arg{ &a, &incorrect, &new_value });
     ASSERT_FALSE(success);
     ASSERT_EQ(a.load(), &old_value);
     ASSERT_EQ(1234, old_value);
@@ -398,7 +398,7 @@ TEST(threadDetailKcas, multiKcasSuccess) {
     int a_new = 101, b_new = 201;
     detail::atomic<int*> a{ &a_val };
     detail::atomic<int*> b{ &b_val };
-    const bool success = kcas(kcas_arg{ a, &a_val, &a_new }, kcas_arg{ b, &b_val, &b_new });
+    const bool success = kcas(kcas_arg{ &a, &a_val, &a_new }, kcas_arg{ &b, &b_val, &b_new });
     ASSERT_TRUE(success);
     ASSERT_EQ(a.load(), &a_new);
     ASSERT_EQ(b.load(), &b_new);
@@ -412,7 +412,7 @@ TEST(threadDetailKcas, multiKcasFailure) {
     int incorrect = 999;
     detail::atomic<int*> a{ &a_val };
     detail::atomic<int*> b{ &b_val };
-    const bool success = kcas(kcas_arg{ a, &a_val, &a_new }, kcas_arg{ b, &incorrect, &b_new });
+    const bool success = kcas(kcas_arg{ &a, &a_val, &a_new }, kcas_arg{ &b, &incorrect, &b_new });
     ASSERT_FALSE(success);
     ASSERT_EQ(a.load(), &a_val);
     ASSERT_EQ(b.load(), &b_val);

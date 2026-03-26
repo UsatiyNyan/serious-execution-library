@@ -57,7 +57,7 @@ concept KCasOperand = sizeof(KCasOperandT) == sizeof(std::uintptr_t);
 
 template <KCasOperand T>
 struct kcas_arg {
-    detail::atomic<T>& a;
+    detail::atomic<T>* a;
     T e;
     T n;
 };
@@ -69,7 +69,7 @@ template <std::size_t K, KCasOperand T>
 
     for (std::size_t i = 0; i < K; ++i) {
         kcas_arg<T>& arg = args[i];
-        immutables.as[i] = std::bit_cast<detail::atomic<std::uintptr_t>*>(&arg.a);
+        immutables.as[i] = std::bit_cast<detail::atomic<std::uintptr_t>*>(arg.a);
         const auto e = std::bit_cast<std::uintptr_t>(arg.e);
         immutables.es[i] = e;
         const auto n = std::bit_cast<std::uintptr_t>(arg.n);
