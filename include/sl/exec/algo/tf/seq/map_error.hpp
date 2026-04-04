@@ -40,7 +40,7 @@ struct [[nodiscard]] map_error_slot final : slot<ValueT, InputErrorT> {
     void set_error(InputErrorT&& error) & override {
         maybe_error_.emplace(std::move(error));
         auto& task = maybe_task_.emplace(*this);
-        executor_.schedule(&task);
+        executor_.schedule(task);
     }
     void set_null() & override { slot_.set_null(); }
 
