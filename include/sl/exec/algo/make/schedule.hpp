@@ -16,7 +16,7 @@ struct [[nodiscard]] schedule_connection final : task_node, connection {
         : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
 
     cancel_handle& emit() && noexcept override {
-        executor_.schedule(this);
+        executor_.schedule(*this);
         return dummy_cancel_handle();
     }
 

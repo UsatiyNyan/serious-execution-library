@@ -34,7 +34,7 @@ private:
 
             const std::uint32_t work_before_batch = self_.work_.fetch_sub(batch_size, std::memory_order::relaxed);
             if (work_before_batch > batch_size) {
-                self_.executor_.schedule(this);
+                self_.executor_.schedule(*this);
             }
         }
         void cancel() noexcept override { self_.stop(); }
@@ -50,7 +50,7 @@ public:
         batch_.push(&a_task_node); // release task
         const std::uint32_t prev_work = work_.fetch_add(1, std::memory_order::relaxed);
         if (prev_work == 0) {
-            executor_.schedule(&task_);
+            executor_.schedule(task_);
         }
     }
 

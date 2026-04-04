@@ -43,7 +43,7 @@ struct [[nodiscard]] and_then_slot final : slot<InputValueT, ErrorT> {
     void set_value(InputValueT&& value) & override {
         maybe_value_.emplace(std::move(value));
         auto& task = maybe_task_.emplace(*this);
-        executor_.schedule(&task);
+        executor_.schedule(task);
     }
     void set_error(ErrorT&& error) & override { slot_.set_error(std::move(error)); }
     void set_null() & override { slot_.set_null(); }

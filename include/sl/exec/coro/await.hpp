@@ -40,11 +40,11 @@ public:
 
     void set_value(ValueT&& value) & override {
         maybe_result_.emplace(tl::in_place, std::move(value));
-        executor_.schedule(&task_);
+        executor_.schedule(task_);
     }
     void set_error(ErrorT&& error) & override {
         maybe_result_.emplace(tl::unexpect, std::move(error));
-        executor_.schedule(&task_);
+        executor_.schedule(task_);
     }
     void set_null() & override { task_.cancel(); }
 

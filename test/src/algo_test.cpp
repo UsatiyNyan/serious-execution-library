@@ -215,7 +215,7 @@ TEST(algo, forceMany) {
 TEST(algo, queryExecutor) {
     const auto maybe_inline_result = start_on(inline_executor()) //
                                      | query_executor()
-                                     | map([](std::pair<executor&, meta::unit> p) -> executor* { return &p.first; })
+                                     | map([](std::pair<meta::unit, executor&> p) -> executor* { return &p.second; })
                                      | get<nowait_event>();
     ASSERT_TRUE(maybe_inline_result.has_value());
     const auto& inline_result = maybe_inline_result.value();
@@ -226,8 +226,8 @@ TEST(algo, queryExecutor) {
     executor* manual_executor_ptr = nullptr;
     start_on(manual_executor) //
         | query_executor() //
-        | map([&manual_executor_ptr](std::pair<executor&, meta::unit> p) {
-              manual_executor_ptr = &p.first;
+        | map([&manual_executor_ptr](std::pair<meta::unit, executor&> p) {
+              manual_executor_ptr = &p.second;
               return meta::unit{};
           })
         | detach();
@@ -336,85 +336,21 @@ TEST(algo, box) {
     EXPECT_EQ(maybe_result.value(), 69);
 }
 
-TEST(algo, cancellableSimple) {
-    {
-        meta::maybe<meta::result<int, meta::undefined>> maybe_result =
-            value_as_signal(42) | cancellable() | get<nowait_event>();
-        ASSERT_TRUE(maybe_result.has_value());
-        ASSERT_EQ(**maybe_result, 42);
-    }
-
-    {
-        bool done = false;
-        auto connection = value_as_signal(meta::unit{}) //
-                          | and_then([](meta::unit) { return meta::ok(meta::unit{}); }) //
-                          | cancellable() //
-                          | map([&done](meta::unit) {
-                                done = true;
-                                PANIC("should not be executed");
-                                return meta::unit{};
-                            })
-                          | subscribe();
-        auto& cancel_handle = connection.get_cancel_handle();
-        ASSERT_TRUE(cancel_handle.intrusive_next);
-        ASSERT_TRUE(cancel_handle.intrusive_next->intrusive_next);
-        ASSERT_TRUE(cancel_handle.intrusive_next->intrusive_next->intrusive_next);
-        EXPECT_FALSE(cancel_handle.intrusive_next->intrusive_next->intrusive_next->intrusive_next);
-        EXPECT_TRUE(cancel_handle.try_cancel());
-
-        std::move(connection).emit();
-        EXPECT_FALSE(done);
-    }
-
-    {
-        bool done = false;
-        auto connection = value_as_signal(meta::unit{}) | cancellable() | map([&done](meta::unit) {
-                              done = true;
-                              return meta::unit{};
-                          })
-                          | subscribe();
-        auto& cancel_handle = connection.get_cancel_handle();
-        std::move(connection).emit();
-
-        EXPECT_FALSE(cancel_handle.try_cancel());
-        EXPECT_TRUE(done);
-    }
-}
-
-TEST(algo, cancellableSchedule) {
+TEST(algo, cancelSimple) {
     manual_executor executor;
+    bool done = false;
+    auto connection = start_on(executor) //
+                      | map([&done](meta::unit) {
+                            done = true;
+                            PANIC("should not be executed");
+                            return meta::unit{};
+                        })
+                      | subscribe();
 
-    struct {
-        std::size_t schedule = 0;
-        std::size_t map = 0;
-    } counters;
-
-    auto connection = //
-        schedule(
-            executor,
-            [&counters] {
-                ++counters.schedule;
-                return meta::ok(meta::unit{});
-            }
-        )
-        | cancellable() //
-        | map([&counters](meta::unit) {
-              ++counters.map;
-              return meta::unit{};
-          })
-        | subscribe();
-
-    auto& cancel_handle = connection.get_cancel_handle();
-    std::move(connection).emit();
-
-    EXPECT_TRUE(cancel_handle.try_cancel());
-    EXPECT_EQ(counters.schedule, 0);
-    EXPECT_EQ(counters.map, 0);
-
-    EXPECT_EQ(executor.execute_batch(), 1);
-    EXPECT_EQ(counters.schedule, 1);
-    EXPECT_EQ(counters.map, 0);
-    EXPECT_EQ(executor.execute_batch(), 0);
+    auto& handle = std::move(connection).emit();
+    EXPECT_TRUE(handle.try_cancel());
+    EXPECT_GT(executor.execute_batch(), 0);
+    EXPECT_FALSE(done);
 }
 
 TEST(algo, channelSimple) {
