@@ -13,12 +13,12 @@ namespace sl::exec {
 struct cancel_handle {
     virtual ~cancel_handle() = default;
 
-    [[nodiscard]] virtual bool try_cancel() & = 0;
+    virtual void try_cancel() & = 0;
 };
 
 inline cancel_handle& dummy_cancel_handle() {
     struct impl final : cancel_handle {
-        bool try_cancel() & override { return false; }
+        void try_cancel() & override {}
     };
 
     static impl a_cancel_handle;
