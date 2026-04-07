@@ -1,26 +1,28 @@
 //
 // Created by usatiynyan.
+// NOTE: `any(...)` on signals breaks propagation of `try_cancel()`
 //
 
 #pragma once
 
 #include "sl/exec/algo/emit/subscribe.hpp"
+#include "sl/exec/algo/sync/detail/parallel.hpp"
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/thread/detail/atomic.hpp"
-#include "sl/exec/thread/detail/polyfill.hpp"
 
+#include <sl/meta/assert.hpp>
 #include <sl/meta/func/lazy_eval.hpp>
-#include <sl/meta/lifetime/defer.hpp>
 #include <sl/meta/monad/maybe.hpp>
-#include <sl/meta/traits/unique.hpp>
 #include <sl/meta/tuple/for_each.hpp>
 #include <sl/meta/type/pack.hpp>
+
+#include <memory>
 
 namespace sl::exec {
 namespace detail {
 
 template <typename ValueT, typename ErrorT, template <typename> typename Atomic, SomeSignal... SignalTs>
-struct all_connection final : connection, cancel_handle {
+struct all_connection final {
 private:
     template <std::size_t Index, typename ElementValueT>
     struct all_slot final : slot<ElementValueT, ErrorT> {
@@ -34,146 +36,92 @@ private:
         all_connection& self_;
     };
 
-    static constexpr std::size_t signals_count = sizeof...(SignalTs);
+    struct all_delete_this {
+        all_connection* this_;
+        void operator()() { delete this_; }
+    };
 
     template <std::size_t Index, typename SignalT = meta::type::at_t<Index, SignalTs...>>
-    using slot_type = all_slot<Index, typename SignalT::value_type>;
-
+    using Slot = all_slot<Index, typename SignalT::value_type>;
     template <std::size_t Index, typename SignalT = meta::type::at_t<Index, SignalTs...>>
-    using connection_type = subscribe_connection<SignalT, slot_type<Index, SignalT>>;
+    using Connection = subscribe_connection<SignalT, Slot<Index, SignalT>>;
+    template <std::size_t... Indexes>
+    static auto derive_parallel_connection_type(std::index_sequence<Indexes...>)
+        -> parallel_connection<all_delete_this, Atomic, Connection<Indexes>...>;
+
+    static constexpr std::size_t N = sizeof...(SignalTs);
+    using parallel_connection_type = decltype(derive_parallel_connection_type(std::make_index_sequence<N>()));
 
     template <std::size_t... Indexes>
-    static auto derive_connections_type(std::index_sequence<Indexes...>) -> std::tuple<connection_type<Indexes>...>;
-    using connections_type = decltype(derive_connections_type(std::make_index_sequence<signals_count>()));
-
-    template <std::size_t... Indexes>
-    static connections_type
+    static auto
         make_connections(all_connection& self, std::tuple<SignalTs...>&& signals, std::index_sequence<Indexes...>) {
         return std::make_tuple(meta::lazy_eval{ [signal = std::move(std::get<Indexes>(signals)), &self]() mutable {
-            return connection_type<Indexes>{ std::move(signal), [&] { return slot_type<Indexes>{ self }; } };
+            return Connection<Indexes>{ std::move(signal), [&] { return Slot<Indexes>{ self }; } };
         } }...);
     }
 
 public:
-    all_connection(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
-        : connections_{ make_connections(*this, std::move(signals), std::make_index_sequence<signals_count>()) },
+    all_connection(std::tuple<SignalTs...>&& signals, executor& an_executor, slot<ValueT, ErrorT>& slot)
+        : parallel_{ make_connections(*this, std::move(signals), std::make_index_sequence<N>()),
+                     an_executor,
+                     all_delete_this{ this } },
           slot_{ slot } {}
 
 public: // connection
-    cancel_handle& emit() && override {
-        std::size_t i = 0;
-        meta::for_each(
-            [&](connection&& a_connection) { cancel_handles_[i++] = &std::move(a_connection).emit(); },
-            std::move(connections_)
-        );
-        ASSERT(i == signals_count);
-        return *this;
-    };
-
-public: // cancel_handle
-    bool try_cancel() & override {
-        if (done_.exchange(true, std::memory_order::acq_rel)) {
-            return false;
-        }
-
-        std::uint32_t cancel_counter = 0;
-
-        for (std::size_t i = 0; i != cancel_handles_.size(); ++i) {
-            cancel_handle& a_cancel_handle = *cancel_handles_[i];
-            const bool is_cancelled = a_cancel_handle.try_cancel();
-            cancel_counter += static_cast<std::uint32_t>(is_cancelled);
-        }
-
-        const bool is_last = increment_and_check(cancel_counter);
-        if (is_last) {
-            delete this;
-        }
-
-        return true;
-    }
+    cancel_handle& emit() && { return std::move(parallel_).emit(); };
 
 private:
-    [[nodiscard]] bool increment_and_check(std::uint32_t diff = 1) {
-        const std::uint32_t current_count = diff + counter_.fetch_add(diff, std::memory_order::relaxed);
-        const bool is_last = current_count == signals_count;
-        return is_last;
-    }
-
     template <std::size_t Index, typename ElementValueT>
     void set_value_impl(ElementValueT&& value) {
         std::get<Index>(maybe_results_).emplace(std::move(value));
 
-        const bool is_last = increment_and_check();
+        const bool is_last = parallel_.increment_and_check();
         if (!is_last) {
             return;
         }
 
-        meta::defer cleanup{ [this] { delete this; } };
-
-        if (done_.exchange(true, std::memory_order::acq_rel)) {
-            return;
+        if (!done_.exchange(true, std::memory_order::acq_rel)) {
+            auto result = meta::for_each(
+                [](auto&& maybe_result) {
+                    DEBUG_ASSERT(maybe_result.has_value());
+                    return std::move(maybe_result).value();
+                },
+                std::move(maybe_results_)
+            );
+            slot_.set_value(std::move(result));
         }
 
-        auto result = meta::for_each(
-            [](auto&& maybe_result) {
-                DEBUG_ASSERT(maybe_result.has_value());
-                return std::move(maybe_result).value();
-            },
-            std::move(maybe_results_)
-        );
-        slot_.set_value(std::move(result));
+        parallel_.schedule_delete_this();
     }
 
     void set_error_impl(std::size_t index, ErrorT&& error) {
-        meta::defer cleanup{ [this] {
-            const bool is_last = increment_and_check();
-            if (is_last) {
-                delete this;
-            }
-        } };
-
         if (!done_.exchange(true, std::memory_order::acq_rel)) {
             slot_.set_error(std::move(error));
-            try_cancel_beside(index);
+            parallel_.schedule_try_cancel_beside(index);
+        }
+
+        const bool is_last = parallel_.increment_and_check();
+        if (is_last) {
+            parallel_.schedule_delete_this();
         }
     }
 
     void set_null_impl(std::size_t index) {
-        meta::defer cleanup{ [this] {
-            const bool is_last = increment_and_check();
-            if (is_last) {
-                delete this;
-            }
-        } };
-
         if (!done_.exchange(true, std::memory_order::acq_rel)) {
             slot_.set_null();
-            try_cancel_beside(index);
-        }
-    }
-
-    void try_cancel_beside(std::size_t excluded_index) {
-        std::uint32_t cancel_counter = 0;
-
-        for (std::size_t i = 0; i != cancel_handles_.size(); ++i) {
-            if (i == excluded_index) {
-                continue;
-            }
-            cancel_handle& a_cancel_handle = *cancel_handles_[i];
-            const bool is_cancelled = a_cancel_handle.try_cancel();
-            cancel_counter += static_cast<std::uint32_t>(is_cancelled);
+            parallel_.schedule_try_cancel_beside(index);
         }
 
-        const bool should_not_be_last = increment_and_check(cancel_counter);
-        ASSERT(!should_not_be_last);
+        const bool is_last = parallel_.increment_and_check();
+        if (is_last) {
+            parallel_.schedule_delete_this();
+        }
     }
 
 private:
-    connections_type connections_;
-    std::array<cancel_handle*, signals_count> cancel_handles_{};
+    parallel_connection_type parallel_;
     std::tuple<meta::maybe<typename SignalTs::value_type>...> maybe_results_{};
     slot<ValueT, ErrorT>& slot_;
-    alignas(hardware_destructive_interference_size) Atomic<std::uint32_t> counter_{ 0 };
     alignas(hardware_destructive_interference_size) Atomic<bool> done_{ false };
 };
 
@@ -182,8 +130,8 @@ struct all_connection_box final : connection {
     using connection_type = all_connection<ValueT, ErrorT, Atomic, SignalTs...>;
 
 public:
-    all_connection_box(std::tuple<SignalTs...>&& signals, slot<ValueT, ErrorT>& slot)
-        : connection_{ std::make_unique<connection_type>(std::move(signals), slot) } {}
+    all_connection_box(std::tuple<SignalTs...>&& signals, executor& an_executor, slot<ValueT, ErrorT>& slot)
+        : connection_{ std::make_unique<connection_type>(std::move(signals), an_executor, slot) } {}
 
     cancel_handle& emit() && override {
         auto& a_connection = *DEBUG_ASSERT_VAL(connection_.release());
@@ -201,28 +149,34 @@ struct [[nodiscard]] all_signal final {
     using error_type = meta::type::head_t<typename SignalTs::error_type...>;
 
 public:
-    explicit all_signal(SignalTs&&... signals) : signals_{ std::move(signals)... } {}
+    explicit all_signal(SignalTs&&... signals, executor& an_executor)
+        : signals_{ std::move(signals)... }, executor_{ an_executor } {}
 
     all_connection_box<value_type, error_type, Atomic, SignalTs...> subscribe(slot<value_type, error_type>& slot) && {
-        return all_connection_box<value_type, error_type, Atomic, SignalTs...>{ std::move(signals_), slot };
+        return all_connection_box<value_type, error_type, Atomic, SignalTs...>{
+            std::move(signals_),
+            executor_,
+            slot,
+        };
     }
 
-    executor& get_executor() { return exec::inline_executor(); }
+    executor& get_executor() { return executor_; }
 
 private:
     std::tuple<SignalTs...> signals_;
+    executor& executor_;
 };
 
 } // namespace detail
 
-template <template <typename> typename Atomic, typename... SignalTs>
-constexpr SomeSignal auto all_(SignalTs... signals) {
-    return detail::all_signal<Atomic, SignalTs...>{ std::move(signals)... };
+template <template <typename> typename Atomic, SomeSignal... SignalTs>
+constexpr SomeSignal auto all_(SignalTs... signals, executor& an_executor = inline_executor()) {
+    return detail::all_signal<Atomic, SignalTs...>{ std::move(signals)..., an_executor };
 }
 
-template <typename... SignalTs>
-constexpr SomeSignal auto all(SignalTs... signals) {
-    return all_<detail::atomic>(std::move(signals)...);
+template <SomeSignal... SignalTs>
+constexpr SomeSignal auto all(SignalTs... signals, executor& an_executor = inline_executor()) {
+    return all_<detail::atomic>(std::move(signals)..., an_executor);
 }
 
 } // namespace sl::exec
