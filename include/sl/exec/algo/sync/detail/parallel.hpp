@@ -1,0 +1,167 @@
+//
+// Created by usatiynyan.
+// NOTE: parallel_connection breaks propagation of `try_cancel()`
+//
+
+#pragma once
+
+#include "sl/exec/algo/sync/serial.hpp"
+#include "sl/exec/model/connection.hpp"
+#include "sl/exec/model/executor.hpp"
+#include "sl/exec/thread/detail/polyfill.hpp"
+
+#include <sl/meta/monad/maybe.hpp>
+
+namespace sl::exec::detail {
+
+template <typename DeleteThisT, template <typename> typename Atomic, typename... ConnectionTs>
+struct parallel_connection {
+private:
+    static constexpr std::size_t N = sizeof...(ConnectionTs);
+
+    struct emit_task : task_node {
+        emit_task(parallel_connection& self, std::array<cancel_handle&, N> cancel_handles)
+            : cancel_handles_{ cancel_handles }, self_{ self } {}
+
+        void execute() noexcept override { self_.serialized_emit(cancel_handles_); }
+        void cancel() noexcept override {
+            // FIXME: leaking for now, should be alright
+        }
+
+    private:
+        std::array<cancel_handle&, N> cancel_handles_;
+        parallel_connection& self_;
+    };
+
+    struct try_cancel_beside_task : task_node {
+        try_cancel_beside_task(parallel_connection& self, std::size_t excluded_index)
+            : self_{ self }, excluded_index_{ excluded_index } {}
+
+        void execute() noexcept override { self_.serialized_try_cancel_beside(excluded_index_); }
+        void cancel() noexcept override {
+            // FIXME: leaking for now, should be alright
+        }
+
+    private:
+        parallel_connection& self_;
+        std::size_t excluded_index_;
+    };
+
+    struct delete_this_task : task_node {
+        explicit delete_this_task(parallel_connection& self) : self_{ self } {}
+
+        void execute() noexcept override { self_.serialized_delete_this(); }
+        void cancel() noexcept override { execute(); }
+
+    private:
+        parallel_connection& self_;
+    };
+
+public:
+    parallel_connection(std::tuple<ConnectionTs...>&& connections, executor& an_executor, DeleteThisT delete_this)
+        : connections_{ std::move(connections) }, executor_{ an_executor }, delete_this_{ std::move(delete_this) } {}
+
+public: // connection
+    cancel_handle& emit() && {
+        std::array<cancel_handle&, N> cancel_handles = std::apply(
+            [](auto&&... a_connection) { return std::array<cancel_handle&, N>{ std::move(a_connection).emit()... }; },
+            std::move(connections_)
+        );
+
+        DEBUG_ASSERT(!tasks_.emit.has_value());
+        executor_.schedule(tasks_.emit.emplace(*this, cancel_handles));
+
+        return dummy_cancel_handle();
+    };
+
+public: // parallel
+    [[nodiscard]] bool increment_and_check(std::uint32_t diff = 1) {
+        const std::uint32_t current_count = diff + counter_.fetch_add(diff, std::memory_order::relaxed);
+        const bool is_last = current_count == N;
+        return is_last;
+    }
+
+    void schedule_try_cancel_beside(std::size_t excluded_index) {
+        DEBUG_ASSERT(!tasks_.try_cancel_beside.has_value());
+        executor_.schedule(tasks_.try_cancel_beside.emplace(*this, excluded_index));
+    }
+
+    void schedule_delete_this() {
+        DEBUG_ASSERT(!tasks_.delete_this.has_value());
+        executor_.schedule(tasks_.delete_this.emplace(*this));
+    }
+
+private: // serialized
+    static void serialized_try_cancel_beside_impl(
+        const std::array<cancel_handle&, N>& cancel_handles,
+        std::size_t excluded_index
+    ) {
+        for (std::size_t i = 0; i != cancel_handles.size(); ++i) {
+            if (i == excluded_index) {
+                continue;
+            }
+            cancel_handles[i].try_cancel();
+        }
+    }
+
+    void serialized_emit(const std::array<cancel_handle&, N>& cancel_handles) {
+        state_.cancel_handles.emplace(cancel_handles);
+
+        // can't touch tasks_.try_cancel or tasks_.try_cancel_beside
+        if (state_.cancel_request.has_value()) {
+            serialized_try_cancel_beside_impl(cancel_handles, state_.cancel_request.value());
+            state_.cancel_request.reset();
+        }
+
+        if (state_.delete_requested) {
+            delete_this_();
+        }
+    }
+
+    void serialized_try_cancel_beside(std::size_t excluded_index) {
+        // try_cancel_beside already has signalled
+        if (state_.cancel_request.has_value()) {
+            return;
+        }
+
+        // cancelling during emit
+        if (!state_.cancel_handles.has_value()) {
+            state_.cancel_request.emplace(excluded_index);
+            return;
+        }
+
+        serialized_try_cancel_beside_impl(state_.cancel_handles.value(), excluded_index);
+    }
+
+    void serialized_delete_this() {
+        // deleting during emit
+        if (!state_.cancel_handles.has_value()) {
+            state_.delete_requested = true;
+            return;
+        }
+
+        delete_this_();
+    }
+
+private:
+    std::tuple<ConnectionTs...> connections_;
+
+    serial_executor<Atomic> executor_;
+    struct tasks {
+        meta::maybe<emit_task> emit{};
+        meta::maybe<try_cancel_beside_task> try_cancel_beside{};
+        meta::maybe<delete_this_task> delete_this{};
+    } tasks_;
+
+    struct state {
+        meta::maybe<std::array<cancel_handle&, N>> cancel_handles{};
+        meta::maybe<std::size_t> cancel_request = {};
+        bool delete_requested = false;
+    } state_;
+
+    DeleteThisT delete_this_;
+
+    alignas(hardware_destructive_interference_size) Atomic<std::uint32_t> counter_{ 0 };
+};
+
+} // namespace sl::exec::detail
