@@ -64,7 +64,11 @@ private:
 
 public:
     template <typename... LazyTs>
-    parallel_connection(std::tuple<LazyTs...>&& lazy_connections, executor& an_executor, DeleteThisT delete_this)
+    parallel_connection(
+        std::tuple<LazyTs...>&& lazy_connections,
+        serial_executor<Atomic>& an_executor,
+        DeleteThisT delete_this
+    )
         : connections_{ std::move(lazy_connections) }, executor_{ an_executor },
           delete_this_{ std::move(delete_this) } {}
 
@@ -195,7 +199,7 @@ private: // serialized
 private:
     std::tuple<ConnectionTs...> connections_;
 
-    serial_executor<Atomic> executor_;
+    serial_executor<Atomic>& executor_;
     struct tasks {
         meta::maybe<emit_task> emit{};
         meta::maybe<try_cancel_beside_task> try_cancel_beside{};
@@ -212,5 +216,11 @@ private:
 
     alignas(hardware_destructive_interference_size) Atomic<std::uint32_t> counter_{ 0 };
 };
+
+template <template <typename> typename Atomic>
+serial_executor<Atomic>& inline_serial_executor() {
+    static serial_executor<Atomic> impl{ inline_executor() };
+    return impl;
+}
 
 } // namespace sl::exec::detail

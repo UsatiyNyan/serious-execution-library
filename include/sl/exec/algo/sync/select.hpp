@@ -108,7 +108,11 @@ private:
     }
 
 public:
-    select_connection(std::tuple<SelectCaseTs...>&& cases, executor& an_executor, slot<ValueT, meta::unit>& slot)
+    select_connection(
+        std::tuple<SelectCaseTs...>&& cases,
+        serial_executor<Atomic>& an_executor,
+        slot<ValueT, meta::unit>& slot
+    )
         : parallel_{ make_connections(*this, std::move(cases), std::make_index_sequence<N>()),
                      an_executor,
                      select_delete_this{ this } },
@@ -183,7 +187,11 @@ struct select_connection_box final : connection {
     using connection_type = select_connection<Atomic, ValueT, SelectCaseTs...>;
 
 public:
-    select_connection_box(std::tuple<SelectCaseTs...>&& cases, executor& an_executor, slot<ValueT, meta::unit>& slot)
+    select_connection_box(
+        std::tuple<SelectCaseTs...>&& cases,
+        serial_executor<Atomic>& an_executor,
+        slot<ValueT, meta::unit>& slot
+    )
         : connection_{ std::make_unique<connection_type>(std::move(cases), an_executor, slot) } {}
 
     cancel_handle& emit() && override {
@@ -203,11 +211,15 @@ struct [[nodiscard]] select final {
 
 public:
     template <typename SelectCaseT>
-    explicit constexpr select(SelectCaseT&& a_case, executor& an_executor)
+    explicit constexpr select(SelectCaseT&& a_case, serial_executor<Atomic>& an_executor)
         : cases_{ std::move(a_case) }, executor_{ an_executor } {}
 
     template <typename PrevSelectCasesTuple, typename SelectCaseT>
-    explicit constexpr select(PrevSelectCasesTuple&& prev_cases, SelectCaseT&& a_case, executor& an_executor)
+    explicit constexpr select(
+        PrevSelectCasesTuple&& prev_cases,
+        SelectCaseT&& a_case,
+        serial_executor<Atomic>& an_executor
+    )
         : cases_{ std::tuple_cat(std::move(prev_cases), std::make_tuple(std::move(a_case))) },
           executor_{ an_executor } {}
 
@@ -231,16 +243,16 @@ public: // SomeSignal
         return select_connection_box<Atomic, ValueT, SelectCaseTs...>{ std::move(cases_), executor_, slot };
     }
 
-    executor& get_executor() & { return executor_; }
+    executor& get_executor() & { return executor_.get_inner(); }
 
 private:
     std::tuple<SelectCaseTs...> cases_;
-    executor& executor_;
+    serial_executor<Atomic>& executor_;
 };
 
 template <template <typename> typename Atomic>
 struct [[nodiscard]] select_start final {
-    explicit constexpr select_start(executor& an_executor) : executor_{ an_executor } {}
+    explicit constexpr select_start(serial_executor<Atomic>& an_executor) : executor_{ an_executor } {}
 
     template <SomeSignal SomeSignalT, SelectFunctorFor<SomeSignalT> F>
     auto case_(SomeSignalT&& signal, F&& functor) {
@@ -252,16 +264,18 @@ struct [[nodiscard]] select_start final {
     }
 
 private:
-    executor& executor_;
+    serial_executor<Atomic>& executor_;
 };
 
 } // namespace detail
 
 template <template <typename> typename Atomic>
-constexpr auto select_(executor& an_executor = inline_executor()) {
+constexpr auto select_(serial_executor<Atomic>& an_executor = detail::inline_serial_executor<Atomic>()) {
     return detail::select_start<Atomic>{ an_executor };
 }
 
-constexpr auto select(executor& an_executor = inline_executor()) { return select_<detail::atomic>(an_executor); }
+constexpr auto select(serial_executor<detail::atomic>& an_executor = detail::inline_serial_executor<detail::atomic>()) {
+    return select_<detail::atomic>(an_executor);
+}
 
 } // namespace sl::exec

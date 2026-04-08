@@ -1,6 +1,6 @@
 //
 // Created by usatiynyan.
-// NOTE: `any(...)` on signals breaks propagation of `try_cancel()`
+// NOTE: `all(...)` on signals breaks propagation of `try_cancel()`
 //
 
 #pragma once
@@ -61,7 +61,11 @@ private:
     }
 
 public:
-    all_connection(std::tuple<SignalTs...>&& signals, executor& an_executor, slot<ValueT, ErrorT>& slot)
+    all_connection(
+        std::tuple<SignalTs...>&& signals,
+        serial_executor<Atomic>& an_executor,
+        slot<ValueT, ErrorT>& slot
+    )
         : parallel_{ make_connections(*this, std::move(signals), std::make_index_sequence<N>()),
                      an_executor,
                      all_delete_this{ this } },
@@ -130,7 +134,11 @@ struct all_connection_box final : connection {
     using connection_type = all_connection<ValueT, ErrorT, Atomic, SignalTs...>;
 
 public:
-    all_connection_box(std::tuple<SignalTs...>&& signals, executor& an_executor, slot<ValueT, ErrorT>& slot)
+    all_connection_box(
+        std::tuple<SignalTs...>&& signals,
+        serial_executor<Atomic>& an_executor,
+        slot<ValueT, ErrorT>& slot
+    )
         : connection_{ std::make_unique<connection_type>(std::move(signals), an_executor, slot) } {}
 
     cancel_handle& emit() && override {
@@ -149,7 +157,7 @@ struct [[nodiscard]] all_signal final {
     using error_type = meta::type::head_t<typename SignalTs::error_type...>;
 
 public:
-    explicit all_signal(SignalTs&&... signals, executor& an_executor)
+    explicit all_signal(SignalTs&&... signals, serial_executor<Atomic>& an_executor)
         : signals_{ std::move(signals)... }, executor_{ an_executor } {}
 
     all_connection_box<value_type, error_type, Atomic, SignalTs...> subscribe(slot<value_type, error_type>& slot) && {
@@ -160,17 +168,17 @@ public:
         };
     }
 
-    executor& get_executor() { return executor_; }
+    executor& get_executor() { return executor_.get_inner(); }
 
 private:
     std::tuple<SignalTs...> signals_;
-    executor& executor_;
+    serial_executor<Atomic>& executor_;
 };
 
 } // namespace detail
 
 template <template <typename> typename Atomic>
-constexpr auto all_(executor& an_executor = inline_executor()) {
+constexpr auto all_(serial_executor<Atomic>& an_executor = detail::inline_serial_executor<Atomic>()) {
     return [&]<SomeSignal... SignalTs>(SignalTs... signals) {
         return detail::all_signal<Atomic, SignalTs...>{ std::move(signals)..., an_executor };
     };
@@ -178,7 +186,7 @@ constexpr auto all_(executor& an_executor = inline_executor()) {
 
 template <SomeSignal... SignalTs>
 constexpr SomeSignal auto all(SignalTs... signals) {
-    return all_<detail::atomic>(inline_executor())(std::move(signals)...);
+    return all_<detail::atomic>(detail::inline_serial_executor<detail::atomic>())(std::move(signals)...);
 }
 
 } // namespace sl::exec
