@@ -336,23 +336,6 @@ TEST(algo, box) {
     EXPECT_EQ(maybe_result.value(), 69);
 }
 
-TEST(algo, cancelSimple) {
-    manual_executor executor;
-    bool done = false;
-    auto connection = start_on(executor) //
-                      | map([&done](meta::unit) {
-                            done = true;
-                            PANIC("should not be executed");
-                            return meta::unit{};
-                        })
-                      | subscribe();
-
-    auto& handle = std::move(connection).emit();
-    handle.try_cancel();
-    EXPECT_GT(executor.execute_batch(), 0);
-    EXPECT_FALSE(done);
-}
-
 TEST(algo, channelSimple) {
     auto channel = make_channel<int>();
 

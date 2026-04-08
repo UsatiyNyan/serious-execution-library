@@ -134,7 +134,7 @@ private:
 
     template <bool CheckDone, typename CaseValueT, typename CaseF>
     void set_value_impl(CaseValueT&& case_value, CaseF&& case_functor, std::size_t index) {
-        if (!CheckDone || !check_done()) {
+        if (!CheckDone || check_done()) {
             ValueT value = std::move(case_functor)(std::move(case_value));
             slot_.set_value(std::move(value));
             parallel_.schedule_try_cancel_beside(index);
@@ -152,7 +152,7 @@ private:
             return;
         }
 
-        if (!check_done()) {
+        if (check_done()) {
             slot_.set_error(meta::unit{});
         }
 
@@ -165,7 +165,7 @@ private:
             return;
         }
 
-        if (!check_done()) {
+        if (check_done()) {
             slot_.set_null();
         }
 
