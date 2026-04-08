@@ -1,6 +1,6 @@
 //
 // Created by usatiynyan.
-// NOTE: `all(...)` on signals breaks propagation of `try_cancel()`
+// NOTE: `any(...)` on signals breaks propagation of `try_cancel()`
 //
 
 #pragma once
@@ -151,14 +151,16 @@ private:
 
 } // namespace detail
 
-template <template <typename> typename Atomic, SomeSignal... SignalTs>
-constexpr SomeSignal auto any_(SignalTs... signals, executor& an_executor = inline_executor()) {
-    return detail::any_signal<Atomic, SignalTs...>{ std::move(signals)..., an_executor };
+template <template <typename> typename Atomic>
+constexpr auto any_(executor& an_executor = inline_executor()) {
+    return [&]<SomeSignal... SignalTs>(SignalTs... signals) {
+        return detail::any_signal<Atomic, SignalTs...>{ std::move(signals)..., an_executor };
+    };
 }
 
 template <SomeSignal... SignalTs>
-constexpr SomeSignal auto any(SignalTs... signals, executor& an_executor = inline_executor()) {
-    return any_<detail::atomic>(std::move(signals)..., an_executor);
+constexpr SomeSignal auto any(SignalTs... signals) {
+    return any_<detail::atomic>(inline_executor())(std::move(signals)...);
 }
 
 } // namespace sl::exec

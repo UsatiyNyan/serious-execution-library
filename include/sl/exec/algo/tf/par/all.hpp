@@ -45,11 +45,11 @@ private:
     using Slot = all_slot<Index, typename SignalT::value_type>;
     template <std::size_t Index, typename SignalT = meta::type::at_t<Index, SignalTs...>>
     using Connection = subscribe_connection<SignalT, Slot<Index, SignalT>>;
+    static constexpr std::size_t N = sizeof...(SignalTs);
+
     template <std::size_t... Indexes>
     static auto derive_parallel_connection_type(std::index_sequence<Indexes...>)
         -> parallel_connection<all_delete_this, Atomic, Connection<Indexes>...>;
-
-    static constexpr std::size_t N = sizeof...(SignalTs);
     using parallel_connection_type = decltype(derive_parallel_connection_type(std::make_index_sequence<N>()));
 
     template <std::size_t... Indexes>
@@ -169,14 +169,16 @@ private:
 
 } // namespace detail
 
-template <template <typename> typename Atomic, SomeSignal... SignalTs>
-constexpr SomeSignal auto all_(SignalTs... signals, executor& an_executor = inline_executor()) {
-    return detail::all_signal<Atomic, SignalTs...>{ std::move(signals)..., an_executor };
+template <template <typename> typename Atomic>
+constexpr auto all_(executor& an_executor = inline_executor()) {
+    return [&]<SomeSignal... SignalTs>(SignalTs... signals) {
+        return detail::all_signal<Atomic, SignalTs...>{ std::move(signals)..., an_executor };
+    };
 }
 
 template <SomeSignal... SignalTs>
-constexpr SomeSignal auto all(SignalTs... signals, executor& an_executor = inline_executor()) {
-    return all_<detail::atomic>(std::move(signals)..., an_executor);
+constexpr SomeSignal auto all(SignalTs... signals) {
+    return all_<detail::atomic>(inline_executor())(std::move(signals)...);
 }
 
 } // namespace sl::exec
