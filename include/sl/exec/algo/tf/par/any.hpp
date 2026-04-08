@@ -52,7 +52,11 @@ private:
     }
 
 public:
-    any_connection(std::tuple<SignalTs...>&& signals, executor& an_executor, slot<ValueT, ErrorT>& slot)
+    any_connection(
+        std::tuple<SignalTs...>&& signals,
+        serial_executor<Atomic>& an_executor,
+        slot<ValueT, ErrorT>& slot
+    )
         : parallel_{ make_connections(*this, std::move(signals), std::make_index_sequence<N>()),
                      an_executor,
                      any_delete_this{ this } },
@@ -111,7 +115,11 @@ struct any_connection_box final : connection {
     using connection_type = any_connection<ValueT, ErrorT, Atomic, SignalTs...>;
 
 public:
-    any_connection_box(std::tuple<SignalTs...>&& signals, executor& an_executor, slot<ValueT, ErrorT>& slot)
+    any_connection_box(
+        std::tuple<SignalTs...>&& signals,
+        serial_executor<Atomic>& an_executor,
+        slot<ValueT, ErrorT>& slot
+    )
         : connection_{ std::make_unique<connection_type>(std::move(signals), an_executor, slot) } {}
 
     cancel_handle& emit() && override {
@@ -131,7 +139,7 @@ struct [[nodiscard]] any_signal final {
     using error_type = meta::type::head_t<typename SignalTs::error_type...>;
 
 public:
-    explicit any_signal(SignalTs&&... signals, executor& an_executor)
+    explicit any_signal(SignalTs&&... signals, serial_executor<Atomic>& an_executor)
         : signals_{ std::move(signals)... }, executor_{ an_executor } {}
 
     any_connection_box<value_type, error_type, Atomic, SignalTs...> subscribe(slot<value_type, error_type>& slot) && {
@@ -142,17 +150,17 @@ public:
         };
     }
 
-    executor& get_executor() { return executor_; }
+    executor& get_executor() { return executor_.get_inner(); }
 
 private:
     std::tuple<SignalTs...> signals_;
-    executor& executor_;
+    serial_executor<Atomic>& executor_;
 };
 
 } // namespace detail
 
 template <template <typename> typename Atomic>
-constexpr auto any_(executor& an_executor = inline_executor()) {
+constexpr auto any_(serial_executor<Atomic>& an_executor = detail::inline_serial_executor<Atomic>()) {
     return [&]<SomeSignal... SignalTs>(SignalTs... signals) {
         return detail::any_signal<Atomic, SignalTs...>{ std::move(signals)..., an_executor };
     };
@@ -160,7 +168,7 @@ constexpr auto any_(executor& an_executor = inline_executor()) {
 
 template <SomeSignal... SignalTs>
 constexpr SomeSignal auto any(SignalTs... signals) {
-    return any_<detail::atomic>(inline_executor())(std::move(signals)...);
+    return any_<detail::atomic>(detail::inline_serial_executor<detail::atomic>())(std::move(signals)...);
 }
 
 } // namespace sl::exec
