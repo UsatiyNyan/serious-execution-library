@@ -151,7 +151,6 @@ as a description of the source of asynchrony.
 - `tf/type` - type transformations for signals
   - `box` - type erasure, would put `signal` and `connection` state on heap
   - `query_executor` - populate pipeline context with previous `signal-s` executor, may differ from actual executor at the point of `emit`
-  - `cancellable` - injects a cancellation point into pipeline, stops slot fulfillment propagation further if cancelled
 - `emit` - evaluation points, where `connection` is formed or calculation is eagerly executed
   - `get` - explicitly blocks until `signal` is evaluated, should be used in synchronous code
   - `detach` - begins evaluation, but does not return value
@@ -188,16 +187,12 @@ async<...> coro(T x);
 
 # TODO
 
-- [ ] sanitizer fixes:
-  - [ ] leaks in channel select
-  - [ ] need to change channel impl
-- [ ] fix channel implementation:
-  - same-select needs fixing - incorrect solution, need separate queues for recv/send
 - [ ] lock-free channel
   - [ ] lock-free list
 - [ ] slots:
   - [ ] noexcept
   - [ ] set_result(...) -> bool
+  - [ ] comptime
 - [ ] thread::pool::distributed
 - [ ] injectable thread-local storage for "pseudo-threads"
 - [ ] TESTS
