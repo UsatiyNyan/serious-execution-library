@@ -26,7 +26,7 @@ private:
 
             auto* tail = meta::intrusive_forward_list_node_reverse(head);
 
-            std::size_t batch_size = 0;
+            std::uint32_t batch_size = 0;
             meta::intrusive_forward_list_node_for_each(tail, [&batch_size](task_node* a_task_node) {
                 ++batch_size;
                 a_task_node->execute();
@@ -61,7 +61,7 @@ public:
 
         auto* tail = meta::intrusive_forward_list_node_reverse(head);
 
-        std::size_t batch_size = 0;
+        std::uint32_t batch_size = 0;
         meta::intrusive_forward_list_node_for_each(tail, [&batch_size](task_node* a_task_node) {
             ++batch_size;
             a_task_node->cancel();

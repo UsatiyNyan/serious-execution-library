@@ -63,8 +63,10 @@ private:
     };
 
 public:
-    parallel_connection(std::tuple<ConnectionTs...>&& connections, executor& an_executor, DeleteThisT delete_this)
-        : connections_{ std::move(connections) }, executor_{ an_executor }, delete_this_{ std::move(delete_this) } {}
+    template <typename... LazyTs>
+    parallel_connection(std::tuple<LazyTs...>&& lazy_connections, executor& an_executor, DeleteThisT delete_this)
+        : connections_{ std::move(lazy_connections) }, executor_{ an_executor },
+          delete_this_{ std::move(delete_this) } {}
 
 public: // connection
     cancel_handle& emit() && {

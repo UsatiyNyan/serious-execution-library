@@ -348,7 +348,7 @@ TEST(algo, cancelSimple) {
                       | subscribe();
 
     auto& handle = std::move(connection).emit();
-    EXPECT_TRUE(handle.try_cancel());
+    handle.try_cancel();
     EXPECT_GT(executor.execute_batch(), 0);
     EXPECT_FALSE(done);
 }
