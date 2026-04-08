@@ -31,15 +31,18 @@ namespace detail {
 
 template <typename ValueT, typename Mutex, template <typename> typename Atomic>
 struct [[nodiscard]] channel_impl {
-    struct channel_node : meta::intrusive_list_node<channel_node> {
+    struct channel_node : meta::immovable {
         virtual ~channel_node() = default;
 
     public:
-        channel_impl* queued_in = nullptr; // protected via channel mutex
         Atomic<std::size_t>* select_done = nullptr;
+        channel_impl* queued_in = nullptr; // protected via channel mutex
+        bool requested_cancel = false; // protected via channel mutex
     };
 
-    struct send_node : channel_node {
+    struct send_node
+        : channel_node
+        , meta::intrusive_list_node<send_node> {
         send_node(ValueT&& value, slot<meta::unit, meta::unit>& slot) : value_{ std::move(value) }, slot_{ slot } {}
 
         send_node(ValueT&& value, select_slot<Atomic, meta::unit>& select_slot)
@@ -57,7 +60,9 @@ struct [[nodiscard]] channel_impl {
         meta::maybe<select_slot<Atomic, meta::unit>&> select_ = meta::null;
     };
 
-    struct recv_node : channel_node {
+    struct recv_node
+        : channel_node
+        , meta::intrusive_list_node<recv_node> {
         explicit recv_node(slot<ValueT, meta::unit>& slot) : slot_{ slot } {}
 
         explicit recv_node(select_slot<Atomic, ValueT>& select_slot) : slot_{ select_slot }, select_{ select_slot } {
@@ -73,85 +78,95 @@ struct [[nodiscard]] channel_impl {
     };
 
 public:
-    void send(send_node& a_node) & {
+    void send(send_node& a_send_node) & {
         std::unique_lock<Mutex> lock{ m_ };
 
         if (is_closed_) {
-            slot<meta::unit, meta::unit>& send_slot = a_node.get_slot();
             lock.unlock();
-            send_slot.set_error(meta::unit{});
+            a_send_node.get_slot().set_error(meta::unit{});
+            return;
+        }
+
+        if (a_send_node.requested_cancel) {
+            lock.unlock();
+            a_send_node.get_slot().set_null();
             return;
         }
 
         if (recv_node* recv_back = recvq_.back(); //
-            recv_back == nullptr || is_same_select(a_node, *recv_back)) {
-            enqueue_impl(sendq_, a_node);
+            recv_back == nullptr || is_same_select(a_send_node, *recv_back)) {
+            enqueue_impl(sendq_, a_send_node);
             return;
         }
 
         while (true) {
             recv_node* a_recv_node = recvq_.pop_front();
             if (a_recv_node == nullptr) {
-                enqueue_impl(sendq_, a_node);
+                enqueue_impl(sendq_, a_send_node);
                 break;
             }
             a_recv_node->queued_in = nullptr;
-            if (try_fulfill_impl(a_node, *a_recv_node, lock)) {
+            if (try_fulfill_impl(a_send_node, *a_recv_node, lock)) {
                 // unlocked
                 break;
             }
             // kcas failed - handle popped recv_node
-            if (a_recv_node->select_done != nullptr && kcas_read(*a_recv_node->select_done) != 0) {
-                // recv's select is done, increment its counter
-                a_recv_node->get_select()->set_null_skip_done();
-            } else {
-                // recv's select is NOT done (kcas failed due to incoming's select)
-                // put recv back at front, enqueue incoming at back for cancellation
+
+            // if recv's select is done, then it will be try_cancell-ed by select and we don't need to requeue it
+            // otherwise recv is not on select or it is not done -> failed because of send's select
+            if (a_recv_node->select_done == nullptr || kcas_read(*a_recv_node->select_done) == 0) {
+                // put recv back at front
                 a_recv_node->queued_in = this;
                 recvq_.push_front(a_recv_node);
-                enqueue_impl(sendq_, a_node);
+                // don't need to queue incoming send, but need to request cancel - it will be try_cancell-ed by select
+                a_send_node.requested_cancel = true;
                 break;
             }
         }
     }
 
-    void receive(recv_node& a_node) & {
+    void receive(recv_node& a_recv_node) & {
         std::unique_lock<Mutex> lock{ m_ };
 
         if (is_closed_) {
-            slot<ValueT, meta::unit>& receive_slot = a_node.get_slot();
             lock.unlock();
-            receive_slot.set_error(meta::unit{});
+            a_recv_node.get_slot().set_error(meta::unit{});
+            return;
+        }
+
+        if (a_recv_node.requested_cancel) {
+            lock.unlock();
+            a_recv_node.get_slot().set_null();
             return;
         }
 
         if (send_node* send_back = sendq_.back(); //
-            send_back == nullptr || is_same_select(*send_back, a_node)) {
-            enqueue_impl(recvq_, a_node);
+            send_back == nullptr || is_same_select(*send_back, a_recv_node)) {
+            enqueue_impl(recvq_, a_recv_node);
             return;
         }
 
         while (true) {
             send_node* a_send_node = sendq_.pop_front();
             if (a_send_node == nullptr) {
-                enqueue_impl(recvq_, a_node);
+                enqueue_impl(recvq_, a_recv_node);
                 break;
             }
             a_send_node->queued_in = nullptr;
-            if (try_fulfill_impl(*a_send_node, a_node, lock)) {
+            if (try_fulfill_impl(*a_send_node, a_recv_node, lock)) {
                 // unlocked
                 break;
             }
             // kcas failed - handle popped send_node
-            if (a_send_node->select_done != nullptr && kcas_read(*a_send_node->select_done) != 0) {
-                // send's select is done, increment its counter
-                a_send_node->get_select()->set_null_skip_done();
-            } else {
-                // send's select is NOT done (kcas failed due to incoming's select)
-                // put send back at front, enqueue incoming at back for cancellation
+
+            // if send's select is done, then it will be try_cancell-ed by select and we don't need to requeue it
+            // otherwise send is not on select or it is not done -> failed because of recv's select
+            if (a_send_node->select_done == nullptr || kcas_read(*a_send_node->select_done) == 0) {
+                // put send back at front
                 a_send_node->queued_in = this;
                 sendq_.push_front(a_send_node);
-                enqueue_impl(recvq_, a_node);
+                // don't need to queue incoming recv, but need to request cancel - it will be try_cancell-ed by select
+                a_recv_node.requested_cancel = true;
                 break;
             }
         }
@@ -171,9 +186,11 @@ public:
 
         for (send_node& node : pending_sends) {
             node.queued_in = nullptr;
+            DEBUG_ASSERT(!node.requested_cancel);
         }
         for (recv_node& node : pending_recvs) {
             node.queued_in = nullptr;
+            DEBUG_ASSERT(!node.requested_cancel);
         }
 
         lock.unlock();
@@ -199,7 +216,7 @@ private:
     [[nodiscard]] static bool
         try_fulfill_impl(send_node& a_send_node, recv_node& a_recv_node, std::unique_lock<Mutex>& lock) {
         if (a_send_node.select_done != nullptr && a_recv_node.select_done != nullptr) {
-            ASSERT(!is_same_select(a_send_node, a_recv_node));
+            DEBUG_ASSERT(!is_same_select(a_send_node, a_recv_node));
             const bool success = !is_same_select(a_send_node, a_recv_node)
                                  && kcas(
                                      kcas_arg<std::size_t>{ .a = a_send_node.select_done, .e = 0, .n = 1 },
@@ -246,27 +263,31 @@ private:
         return true;
     }
 
-    template <typename Q>
-    void enqueue_impl(Q& q, channel_node& a_node) {
-        a_node.queued_in = this;
-        q.push_back(&a_node);
+    template <typename QueueT, typename NodeT>
+    void enqueue_impl(QueueT& q, NodeT& node) {
+        node.queued_in = this;
+        q.push_back(&node);
     }
 
-    // TODO: could be deferred
-    template <typename Q>
-    void un_impl(Q& q, channel_node& node) {
-        std::lock_guard<Mutex> lock{ m_ };
-        if (node.queued_in == nullptr) {
-            return;
+    template <typename QueueT, typename NodeT>
+    void un_impl(QueueT& q, NodeT& node) {
+        std::unique_lock<Mutex> lock{ m_ };
+        if (node.queued_in != nullptr) {
+            DEBUG_ASSERT(node.queued_in == this);
+            DEBUG_ASSERT(
+                std::find_if(q.begin(), q.end(), [&node](auto& x) { return &node == &x; }) != q.end(),
+                "not found node in q_, q_ is ",
+                q.empty() ? "empty" : "not empty"
+            );
+            std::ignore = q.erase(&node);
+            node.queued_in = nullptr;
+            node.requested_cancel = true;
         }
-        DEBUG_ASSERT(node.queued_in == this);
-        DEBUG_ASSERT(
-            std::find_if(q.begin(), q.end(), [&node](channel_node& x) { return &node == &x; }) != q.end(),
-            "not found node in q_, q_ is ",
-            q.empty() ? "empty" : "not empty"
-        );
-        std::ignore = q.erase(&node);
-        node.queued_in = nullptr;
+
+        if (std::exchange(node.requested_cancel, true)) {
+            lock.unlock();
+            node.get_slot().set_null();
+        }
     }
 
 private:

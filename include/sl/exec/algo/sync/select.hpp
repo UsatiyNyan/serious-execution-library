@@ -51,7 +51,6 @@ struct select_slot : slot<ValueT, meta::unit> {
     virtual ~select_slot() = default;
     [[nodiscard]] virtual Atomic<std::size_t>& get_done() & = 0;
     virtual void set_value_skip_done(ValueT&& value) & = 0;
-    virtual void set_null_skip_done() & = 0;
 };
 
 template <template <typename> typename Atomic, typename ValueT, typename... SelectCaseTs>
@@ -70,13 +69,12 @@ private:
             self_.set_value_impl</*CheckDone=*/true>(std::move(value), std::move(functor_), index_);
         }
         void set_error(meta::unit&&) & override { self_.set_error_impl(); }
-        void set_null() & override { self_.set_null_impl</*CheckDone=*/true>(); }
+        void set_null() & override { self_.set_null_impl(); }
 
         Atomic<std::size_t>& get_done() & override { return self_.done_; }
         void set_value_skip_done(value_type&& value) & override {
             self_.set_value_impl</*CheckDone=*/false>(std::move(value), std::move(functor_), index_);
         }
-        void set_null_skip_done() & override { self_.set_null_impl</*CheckDone=*/false>(); }
 
     private:
         functor_type functor_;
@@ -161,14 +159,13 @@ private:
         parallel_.schedule_delete_this();
     }
 
-    template <bool CheckDone>
     void set_null_impl() {
         const bool is_last = parallel_.increment_and_check();
         if (!is_last) {
             return;
         }
 
-        if (!CheckDone || !check_done()) {
+        if (!check_done()) {
             slot_.set_null();
         }
 
