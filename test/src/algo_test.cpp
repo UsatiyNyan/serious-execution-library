@@ -479,6 +479,16 @@ TEST(algo, selectChannel) {
     EXPECT_EQ(counter1, 0);
     EXPECT_EQ(counter2, 1);
     EXPECT_EQ(counter3, 0);
+
+    // Receive pending send on channel2 before closing
+    const auto c2_recv_result = channel2->receive() | get<nowait_event>();
+    EXPECT_TRUE(c2_recv_result.has_value());
+    EXPECT_EQ(counter2, 2);  // The detached send's map callback ran
+
+    // Close channels to clean up pending detached operations
+    channel1->close() | get<nowait_event>();
+    channel2->close() | get<nowait_event>();
+    channel3->close() | get<nowait_event>();
 }
 
 TEST(algo, selectChannelDefault) {
