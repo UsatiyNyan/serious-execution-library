@@ -79,6 +79,11 @@ struct [[nodiscard]] channel_impl {
 
 public:
     void send(send_node& a_send_node) & {
+        const auto enqueue_impl = [&] {
+            a_send_node.queued_in = this;
+            sendq_.push_back(&a_send_node);
+        };
+
         std::unique_lock<Mutex> lock{ m_ };
 
         if (is_closed_) {
@@ -95,14 +100,14 @@ public:
 
         if (recv_node* recv_back = recvq_.back(); //
             recv_back == nullptr || is_same_select(a_send_node, *recv_back)) {
-            enqueue_impl(sendq_, a_send_node);
+            enqueue_impl();
             return;
         }
 
         while (true) {
             recv_node* a_recv_node = recvq_.pop_front();
             if (a_recv_node == nullptr) {
-                enqueue_impl(sendq_, a_send_node);
+                enqueue_impl();
                 break;
             }
             a_recv_node->queued_in = nullptr;
@@ -128,11 +133,15 @@ public:
     void receive(recv_node& a_recv_node) & {
         std::unique_lock<Mutex> lock{ m_ };
 
-        if (is_closed_) {
-            lock.unlock();
-            a_recv_node.get_slot().set_error(meta::unit{});
-            return;
-        }
+        const auto enqueue_impl = [&] {
+            if (is_closed_) {
+                lock.unlock();
+                a_recv_node.get_slot().set_error(meta::unit{});
+            } else {
+                a_recv_node.queued_in = this;
+                recvq_.push_back(&a_recv_node);
+            }
+        };
 
         if (a_recv_node.requested_cancel) {
             lock.unlock();
@@ -142,14 +151,14 @@ public:
 
         if (send_node* send_back = sendq_.back(); //
             send_back == nullptr || is_same_select(*send_back, a_recv_node)) {
-            enqueue_impl(recvq_, a_recv_node);
+            enqueue_impl();
             return;
         }
 
         while (true) {
             send_node* a_send_node = sendq_.pop_front();
             if (a_send_node == nullptr) {
-                enqueue_impl(recvq_, a_recv_node);
+                enqueue_impl();
                 break;
             }
             a_send_node->queued_in = nullptr;
@@ -181,13 +190,8 @@ public:
             return;
         }
 
-        auto pending_sends = std::move(sendq_);
         auto pending_recvs = std::move(recvq_);
 
-        for (send_node& node : pending_sends) {
-            node.queued_in = nullptr;
-            DEBUG_ASSERT(!node.requested_cancel);
-        }
         for (recv_node& node : pending_recvs) {
             node.queued_in = nullptr;
             DEBUG_ASSERT(!node.requested_cancel);
@@ -195,9 +199,6 @@ public:
 
         lock.unlock();
 
-        for (send_node& node : pending_sends) {
-            node.get_slot().set_error(meta::unit{});
-        }
         for (recv_node& node : pending_recvs) {
             node.get_slot().set_error(meta::unit{});
         }
@@ -261,12 +262,6 @@ private:
         a_send_node.get_slot().set_value(meta::unit{});
 
         return true;
-    }
-
-    template <typename QueueT, typename NodeT>
-    void enqueue_impl(QueueT& q, NodeT& node) {
-        node.queued_in = this;
-        q.push_back(&node);
     }
 
     template <typename QueueT, typename NodeT>
