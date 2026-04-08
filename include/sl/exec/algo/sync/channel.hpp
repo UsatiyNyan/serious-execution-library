@@ -3,6 +3,8 @@
 //
 // `channel` is MPMC(Multi Producer Multi Consumer)
 //
+// TODO: cancel could be deferred
+//
 
 #pragma once
 
@@ -99,8 +101,7 @@ public:
                 break;
             }
             // kcas failed - handle popped recv_node
-            if (a_recv_node->select_done != nullptr
-                && kcas_read(*a_recv_node->select_done) != 0) {
+            if (a_recv_node->select_done != nullptr && kcas_read(*a_recv_node->select_done) != 0) {
                 // recv's select is done, increment its counter
                 a_recv_node->get_select()->set_null_skip_done();
             } else {
@@ -142,8 +143,7 @@ public:
                 break;
             }
             // kcas failed - handle popped send_node
-            if (a_send_node->select_done != nullptr
-                && kcas_read(*a_send_node->select_done) != 0) {
+            if (a_send_node->select_done != nullptr && kcas_read(*a_send_node->select_done) != 0) {
                 // send's select is done, increment its counter
                 a_send_node->get_select()->set_null_skip_done();
             } else {
@@ -188,8 +188,8 @@ public:
         close_slot.set_value(meta::unit{});
     }
 
-    [[nodiscard]] bool unsend(send_node& a_node) & { return un_impl(sendq_, a_node); }
-    [[nodiscard]] bool unreceive(recv_node& a_node) & { return un_impl(recvq_, a_node); }
+    void unsend(send_node& a_node) & { un_impl(sendq_, a_node); }
+    void unreceive(recv_node& a_node) & { un_impl(recvq_, a_node); }
 
 private:
     static bool is_same_select(send_node& a_send_node, recv_node& a_recv_node) {
@@ -252,11 +252,12 @@ private:
         q.push_back(&a_node);
     }
 
+    // TODO: could be deferred
     template <typename Q>
-    bool un_impl(Q& q, channel_node& node) {
+    void un_impl(Q& q, channel_node& node) {
         std::lock_guard<Mutex> lock{ m_ };
         if (node.queued_in == nullptr) {
-            return false;
+            return;
         }
         DEBUG_ASSERT(node.queued_in == this);
         DEBUG_ASSERT(
@@ -266,7 +267,6 @@ private:
         );
         std::ignore = q.erase(&node);
         node.queued_in = nullptr;
-        return true;
     }
 
 private:
@@ -301,7 +301,7 @@ struct [[nodiscard]] channel_send_signal {
         std::uintptr_t get_ordering() const& override { return std::bit_cast<std::uintptr_t>(&impl_); }
 
     public: // cancel_handle
-        bool try_cancel() & override { return impl_.unsend(node_); }
+        void try_cancel() & override { impl_.unsend(node_); }
 
     private:
         typename impl_type::send_node node_;
@@ -348,7 +348,7 @@ struct [[nodiscard]] channel_receive_signal {
         std::uintptr_t get_ordering() const& override { return std::bit_cast<std::uintptr_t>(&impl_); }
 
     public: // cancel_handle
-        bool try_cancel() & override { return impl_.unreceive(node_); }
+        void try_cancel() & override { impl_.unreceive(node_); }
 
     private:
         typename impl_type::recv_node node_;
@@ -398,6 +398,7 @@ public:
 private:
     impl_type& impl_;
 };
+
 } // namespace detail
 
 template <typename ValueT, typename Mutex = detail::mutex, template <typename> typename Atomic = detail::atomic>
