@@ -10,7 +10,12 @@
 #include "sl/exec/model/executor.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
 
+#include <sl/meta/match/overloaded.hpp>
 #include <sl/meta/monad/maybe.hpp>
+#include <sl/meta/tuple/for_each.hpp>
+
+#include <cstdint>
+#include <limits>
 
 namespace sl::exec::detail {
 
@@ -20,7 +25,7 @@ private:
     static constexpr std::size_t N = sizeof...(ConnectionTs);
 
     struct emit_task : task_node {
-        emit_task(parallel_connection& self, std::array<cancel_handle&, N> cancel_handles)
+        emit_task(parallel_connection& self, std::array<cancel_handle*, N> cancel_handles)
             : cancel_handles_{ cancel_handles }, self_{ self } {}
 
         void execute() noexcept override { self_.serialized_emit(cancel_handles_); }
@@ -29,7 +34,7 @@ private:
         }
 
     private:
-        std::array<cancel_handle&, N> cancel_handles_;
+        std::array<cancel_handle*, N> cancel_handles_;
         parallel_connection& self_;
     };
 
@@ -63,16 +68,58 @@ public:
 
 public: // connection
     cancel_handle& emit() && {
-        std::array<cancel_handle&, N> cancel_handles = std::apply(
-            [](auto&&... a_connection) { return std::array<cancel_handle&, N>{ std::move(a_connection).emit()... }; },
-            std::move(connections_)
-        );
+        std::array<cancel_handle*, N> cancel_handles{};
+        {
+            std::size_t i = 0;
+            meta::for_each(
+                [&](auto&& a_connection) { cancel_handles[i++] = &std::move(a_connection).emit(); },
+                std::move(connections_)
+            );
+            DEBUG_ASSERT(i == N);
+        }
 
-        DEBUG_ASSERT(!tasks_.emit.has_value());
-        executor_.schedule(tasks_.emit.emplace(*this, cancel_handles));
-
+        emit_impl(cancel_handles);
         return dummy_cancel_handle();
     };
+
+    // all connections are subscribe_connection
+    cancel_handle& emit_ordered() && {
+        std::array<std::pair<connection*, std::uintptr_t>, N> ordered_connections{};
+        {
+            constexpr meta::overloaded get_ordering{
+                [](const ordered_connection& an_ordered_connection) { return an_ordered_connection.get_ordering(); },
+                [](const connection&) { return std::numeric_limits<std::uintptr_t>::max(); },
+            };
+            std::size_t i = 0;
+            meta::for_each(
+                [&](auto& a_subscribe_connection) {
+                    ordered_connections[i++] = std::pair<connection*, std::uintptr_t>{
+                        &a_subscribe_connection,
+                        get_ordering(a_subscribe_connection.get_inner()),
+                    };
+                },
+                connections_
+            );
+            DEBUG_ASSERT(i == N);
+        }
+        std::stable_sort(ordered_connections.begin(), ordered_connections.end(), [](const auto& x, const auto& y) {
+            return x.second < y.second;
+        });
+
+        std::array<cancel_handle*, N> cancel_handles{};
+        for (std::size_t i = 0; i < cancel_handles.size(); ++i) {
+            cancel_handles[i] = &std::move(*ordered_connections[i].first).emit();
+        }
+
+        emit_impl(cancel_handles);
+        return dummy_cancel_handle();
+    }
+
+private:
+    void emit_impl(const std::array<cancel_handle*, N>& cancel_handles) {
+        DEBUG_ASSERT(!tasks_.emit.has_value());
+        executor_.schedule(tasks_.emit.emplace(*this, cancel_handles));
+    }
 
 public: // parallel
     [[nodiscard]] bool increment_and_check(std::uint32_t diff = 1) {
@@ -93,18 +140,18 @@ public: // parallel
 
 private: // serialized
     static void serialized_try_cancel_beside_impl(
-        const std::array<cancel_handle&, N>& cancel_handles,
+        const std::array<cancel_handle*, N>& cancel_handles,
         std::size_t excluded_index
     ) {
         for (std::size_t i = 0; i != cancel_handles.size(); ++i) {
             if (i == excluded_index) {
                 continue;
             }
-            cancel_handles[i].try_cancel();
+            ASSERT_VAL(cancel_handles[i])->try_cancel();
         }
     }
 
-    void serialized_emit(const std::array<cancel_handle&, N>& cancel_handles) {
+    void serialized_emit(const std::array<cancel_handle*, N>& cancel_handles) {
         state_.cancel_handles.emplace(cancel_handles);
 
         // can't touch tasks_.try_cancel or tasks_.try_cancel_beside
@@ -154,7 +201,7 @@ private:
     } tasks_;
 
     struct state {
-        meta::maybe<std::array<cancel_handle&, N>> cancel_handles{};
+        meta::maybe<std::array<cancel_handle*, N>> cancel_handles{};
         meta::maybe<std::size_t> cancel_request = {};
         bool delete_requested = false;
     } state_;
