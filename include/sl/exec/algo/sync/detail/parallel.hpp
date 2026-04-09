@@ -90,31 +90,40 @@ public: // connection
 
     // all connections are subscribe_connection
     cancel_handle& emit_ordered() && {
-        std::array<std::pair<connection*, std::uintptr_t>, N> ordered_connections{};
+        struct oc_item_type {
+            connection* c;
+            std::uintptr_t o; // order
+            std::size_t i; // index
+        };
+        std::array<oc_item_type, N> oc_items{};
         {
             constexpr meta::overloaded get_ordering{
-                [](const ordered_connection& an_ordered_connection) { return an_ordered_connection.get_ordering(); },
+                [](const ordered_connection& oc) { return oc.get_ordering(); },
                 [](const connection&) { return std::numeric_limits<std::uintptr_t>::max(); },
             };
             std::size_t i = 0;
             meta::for_each(
                 [&](auto& a_subscribe_connection) {
-                    ordered_connections[i++] = std::pair<connection*, std::uintptr_t>{
-                        &a_subscribe_connection,
-                        get_ordering(a_subscribe_connection.get_inner()),
+                    oc_items[i] = oc_item_type{
+                        .c = &a_subscribe_connection,
+                        .o = get_ordering(a_subscribe_connection.get_inner()),
+                        .i = i,
                     };
+                    ++i;
                 },
                 connections_
             );
             DEBUG_ASSERT(i == N);
         }
-        std::stable_sort(ordered_connections.begin(), ordered_connections.end(), [](const auto& x, const auto& y) {
-            return x.second < y.second;
+        std::stable_sort(oc_items.begin(), oc_items.end(), [](const oc_item_type& x, const oc_item_type& y) {
+            return x.o < y.o;
         });
 
+        // Emit in sorted order, but store cancel_handles in ORIGINAL order
+        // This is critical: schedule_try_cancel_beside uses original indices
         std::array<cancel_handle*, N> cancel_handles{};
-        for (std::size_t i = 0; i < cancel_handles.size(); ++i) {
-            cancel_handles[i] = &std::move(*ordered_connections[i].first).emit();
+        for (const oc_item_type& oc_item : oc_items) {
+            cancel_handles[oc_item.i] = &std::move(*oc_item.c).emit();
         }
 
         emit_impl(cancel_handles);

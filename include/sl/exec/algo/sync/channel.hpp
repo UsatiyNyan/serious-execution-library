@@ -117,9 +117,12 @@ public:
             }
             // kcas failed - handle popped recv_node
 
-            // if recv's select is done, then it will be try_cancell-ed by select and we don't need to requeue it
-            // otherwise recv is not on select or it is not done -> failed because of send's select
-            if (a_recv_node->select_done == nullptr || kcas_read(*a_recv_node->select_done) == 0) {
+            if (a_recv_node->select_done != nullptr && kcas_read(*a_recv_node->select_done) != 0) {
+                // if recv's select is done, then it will be try_cancell-ed by select and we don't need to requeue it,
+                // but need to mark it for cancellation (since it is not queued)
+                a_recv_node->requested_cancel = true;
+            } else {
+                // otherwise recv is not on select or it is not done -> failed because of send's select
                 // put recv back at front
                 a_recv_node->queued_in = this;
                 recvq_.push_front(a_recv_node);
@@ -168,9 +171,12 @@ public:
             }
             // kcas failed - handle popped send_node
 
-            // if send's select is done, then it will be try_cancell-ed by select and we don't need to requeue it
-            // otherwise send is not on select or it is not done -> failed because of recv's select
-            if (a_send_node->select_done == nullptr || kcas_read(*a_send_node->select_done) == 0) {
+            if (a_send_node->select_done != nullptr && kcas_read(*a_send_node->select_done) != 0) {
+                // if send's select is done, then it will be try_cancell-ed by select and we don't need to requeue it
+                // but need to mark it for cancellation (since it is not queued)
+                a_send_node->requested_cancel = true;
+            } else {
+                // otherwise send is not on select or it is not done -> failed because of recv's select
                 // put send back at front
                 a_send_node->queued_in = this;
                 sendq_.push_front(a_send_node);

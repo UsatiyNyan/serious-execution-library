@@ -330,4 +330,201 @@ TEST(parallel, allHeterogeneousTypes) {
     EXPECT_DOUBLE_EQ(d, 3.14);
 }
 
+// ============================================================================
+// select tests - verify proper cleanup
+// ============================================================================
+
+TEST(parallel, selectSingleImmediate) {
+    // Simplest case: select with just one immediate signal
+    using result_type = meta::result<int, meta::unit>;
+    int result = -1;
+
+    select()
+        .case_(
+            as_signal(result_type{ 42 }),
+            [&](int x) {
+                result = x;
+                return 0;
+            }
+        )
+        | detach();
+
+    EXPECT_EQ(result, 42);
+}
+
+TEST(parallel, selectTwoImmediates) {
+    // Select with two immediate signals - first wins
+    using result_type = meta::result<int, meta::unit>;
+    int result = -1;
+
+    select()
+        .case_(
+            as_signal(result_type{ 42 }),
+            [&](int x) {
+                result = x;
+                return 0;
+            }
+        )
+        .case_(
+            as_signal(result_type{ 69 }),
+            [&](int x) {
+                result = x;
+                return 1;
+            }
+        )
+        | detach();
+
+    EXPECT_EQ(result, 42);
+}
+
+TEST(parallel, selectImmediateAndChannelRecv) {
+    // Scenario: select with immediate signal + channel receive
+    // When immediate signal wins, the channel receive should be properly cancelled
+    // Uses inline serial executor (like the working selectChannel test)
+
+    auto channel = make_channel<int>();
+
+    int result = -1;
+    bool select_completed = false;
+
+    // Create select: immediate value wins, channel receive should be cancelled
+    // Note: select requires error_type = meta::unit
+    using result_type = meta::result<int, meta::unit>;
+    select()
+        .case_(
+            as_signal(result_type{ 42 }),
+            [&](int x) {
+                result = x;
+                select_completed = true;
+                return 0;
+            }
+        )
+        .case_(
+            channel->receive(),
+            [&](int x) {
+                result = x;
+                select_completed = true;
+                return 1;
+            }
+        )
+        | detach();
+
+    // Immediate signal completes synchronously - result should be set
+    // With inline executor, try_cancel runs immediately
+    EXPECT_EQ(result, 42);
+    EXPECT_TRUE(select_completed);
+
+    // Close channel to clean up
+    channel->close() | get<nowait_event>();
+}
+
+TEST(parallel, selectImmediateAndChannelSend) {
+    // Symmetric case: select with immediate signal + channel send
+    // When immediate signal wins, the channel send should be properly cancelled
+
+    auto channel = make_channel<int>();
+
+    int result = -1;
+
+    // Create select: immediate value wins, channel send should be cancelled
+    // Note: select requires error_type = meta::unit
+    using result_type = meta::result<int, meta::unit>;
+    select()
+        .case_(
+            as_signal(result_type{ 42 }),
+            [&](int x) {
+                result = x;
+                return 0;
+            }
+        )
+        .case_(
+            channel->send(100),
+            [&](meta::unit) {
+                result = 100;
+                return 1;
+            }
+        )
+        | detach();
+
+    // Immediate signal wins
+    EXPECT_EQ(result, 42);
+
+    // Close channel to clean up the pending send
+    channel->close() | get<nowait_event>();
+}
+
+TEST(parallel, selectTwoChannelReceives) {
+    // Test select with two channel receives
+    // Similar to selectChannel but simpler
+
+    auto channel1 = make_channel<int>();
+    auto channel2 = make_channel<std::string>();
+
+    int result = -1;
+
+    // Create select with two channel receives
+    select()
+        .case_(
+            channel1->receive(),
+            [&](int x) {
+                result = x;
+                return 0;
+            }
+        )
+        .case_(
+            channel2->receive(),
+            [&](std::string) {
+                result = 1;
+                return 1;
+            }
+        )
+        | detach();
+
+    // Both receives are queued, select not done yet
+    EXPECT_EQ(result, -1);
+
+    // Send to channel1 - this will complete case 1, cancel case 2
+    channel1->send(42) | get<nowait_event>();
+    EXPECT_EQ(result, 42);
+
+    // Close channels to clean up
+    channel1->close() | get<nowait_event>();
+    channel2->close() | get<nowait_event>();
+}
+
+// Test to isolate the leak issue - just immediate signals, no channel
+// Test: select with mixed signal types (ordered and non-ordered)
+// Verifies that emit_ordered correctly handles cancellation when
+// connections are reordered by ordering value
+TEST(parallel, selectMixedOrderingRepeated) {
+    // Run multiple times to verify no memory leaks
+    for (int i = 0; i < 10; ++i) {
+        auto channel = make_channel<int>();
+        int result = -1;
+
+        // Immediate signal (non-ordered) + channel send (ordered)
+        // Immediate wins, channel send should be properly cancelled
+        using result_type = meta::result<int, meta::unit>;
+        select()
+            .case_(
+                as_signal(result_type{ 42 }),
+                [&](int x) {
+                    result = x;
+                    return 0;
+                }
+            )
+            .case_(
+                channel->send(100),
+                [&](meta::unit) {
+                    result = 100;
+                    return 1;
+                }
+            )
+            | detach();
+
+        EXPECT_EQ(result, 42);
+        channel->close() | get<nowait_event>();
+    }
+}
+
 } // namespace sl::exec
