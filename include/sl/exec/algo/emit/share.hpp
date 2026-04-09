@@ -75,7 +75,7 @@ public: // refcount
     }
 
     std::uint32_t decref(std::uint32_t diff = 1) & {
-        const std::uint32_t prev = refcount_.fetch_sub(diff, std::memory_order::relaxed);
+        const std::uint32_t prev = refcount_.fetch_sub(diff, std::memory_order::acq_rel);
         if (prev == diff) {
             delete this;
         }
