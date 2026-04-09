@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cmake-build.sh . serious-execution-library_tests)"
+      "Bash(cmake-build.sh:*)",
+      "Bash(./build/test/serious-execution-library_parallel_test:*)",
+      "Bash(./build/test/serious-execution-library_algo_test)"
     ]
   }
 }
