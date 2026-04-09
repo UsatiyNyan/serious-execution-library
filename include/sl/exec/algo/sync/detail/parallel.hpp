@@ -128,8 +128,8 @@ private:
     }
 
 public: // parallel
-    [[nodiscard]] bool increment_and_check(std::uint32_t diff = 1) {
-        const std::uint32_t current_count = diff + counter_.fetch_add(diff, std::memory_order::relaxed);
+    [[nodiscard]] bool increment_and_check(std::uint32_t diff = 1, std::memory_order mo = std::memory_order::relaxed) {
+        const std::uint32_t current_count = diff + counter_.fetch_add(diff, mo);
         const bool is_last = current_count == N;
         return is_last;
     }

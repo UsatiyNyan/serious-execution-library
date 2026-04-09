@@ -61,11 +61,7 @@ private:
     }
 
 public:
-    all_connection(
-        std::tuple<SignalTs...>&& signals,
-        serial_executor<Atomic>& an_executor,
-        slot<ValueT, ErrorT>& slot
-    )
+    all_connection(std::tuple<SignalTs...>&& signals, serial_executor<Atomic>& an_executor, slot<ValueT, ErrorT>& slot)
         : parallel_{ make_connections(*this, std::move(signals), std::make_index_sequence<N>()),
                      an_executor,
                      all_delete_this{ this } },
@@ -79,7 +75,8 @@ private:
     void set_value_impl(ElementValueT&& value) {
         std::get<Index>(maybe_results_).emplace(std::move(value));
 
-        const bool is_last = parallel_.increment_and_check();
+        // synchronizing access to maybe_results_
+        const bool is_last = parallel_.increment_and_check(1, std::memory_order::acq_rel);
         if (!is_last) {
             return;
         }
