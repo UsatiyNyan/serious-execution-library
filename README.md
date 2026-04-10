@@ -97,6 +97,8 @@ const auto value = result->value();
 std::cout << value << std::endl;
 ```
 
+For design details on `parallel_connection`, `channel`, and `select`, see [DESIGN.md](DESIGN.md).
+
 ## and more!
 
 see [here](test/src)
@@ -196,4 +198,5 @@ async<...> coro(T x);
 - [ ] thread::pool::distributed
 - [ ] injectable thread-local storage for "pseudo-threads"
 - [ ] TESTS
+- [ ] support custom allocators for each new/delete
 
