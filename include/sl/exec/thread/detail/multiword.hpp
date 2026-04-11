@@ -23,6 +23,7 @@
 
 #include <sl/meta/assert.hpp>
 
+#include <array>
 #include <bit>
 #include <concepts>
 #include <cstdint>

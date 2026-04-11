@@ -13,7 +13,7 @@ sl_project_prologue(
     CXX_STANDARD 23)
 project(
         serious-execution-library
-        VERSION 2.0.1
+        VERSION 2.0.2
         DESCRIPTION "coroutines, futures, async, parallelism"
         HOMEPAGE_URL "TODO"
         LANGUAGES CXX)
