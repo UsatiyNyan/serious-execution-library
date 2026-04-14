@@ -15,7 +15,6 @@
 
 #pragma once
 
-#include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/algo/make/result.hpp"
 #include "sl/exec/algo/sync/detail/parallel.hpp"
 #include "sl/exec/model/concept.hpp"
@@ -46,49 +45,52 @@ public:
     functor_type functor;
 };
 
-template <template <typename> typename Atomic, typename ValueT>
-struct select_slot : slot<ValueT, meta::unit> {
-    virtual ~select_slot() = default;
-    [[nodiscard]] virtual Atomic<std::size_t>& get_done() & = 0;
-    virtual void set_value_skip_done(ValueT&& value) & = 0;
-};
-
-template <template <typename> typename Atomic, typename ValueT, typename... SelectCaseTs>
+template <template <typename> typename Atomic, typename ValueT, typename SlotCtorT, typename... SelectCaseTs>
 struct select_connection final {
+    using slot_type = SlotFrom<SlotCtorT>;
+
 private:
     template <typename SelectCase>
-    struct case_slot_type final : select_slot<Atomic, typename SelectCase::signal_type::value_type> {
+    struct case_slot_type final {
         using value_type = typename SelectCase::signal_type::value_type;
         using functor_type = typename SelectCase::functor_type;
 
-    public:
-        case_slot_type(functor_type&& functor, select_connection& self, std::size_t index)
-            : functor_{ std::move(functor) }, self_{ self }, index_{ index } {}
+        functor_type functor;
+        select_connection& self;
+        std::size_t index;
 
-        void set_value(value_type&& value) & override {
-            self_.set_value_impl</*CheckDone=*/true>(std::move(value), std::move(functor_), index_);
+        void set_value(value_type&& value) && noexcept {
+            self.set_value_impl</*CheckDone=*/true>(std::move(value), std::move(functor), index);
         }
-        void set_error(meta::unit&&) & override { self_.set_error_impl(); }
-        void set_null() & override { self_.set_null_impl(); }
+        void set_error(meta::unit&&) && noexcept { self.set_error_impl(); }
+        void set_null() && noexcept { self.set_null_impl(); }
 
-        Atomic<std::size_t>& get_done() & override { return self_.done_; }
-        void set_value_skip_done(value_type&& value) & override {
-            self_.set_value_impl</*CheckDone=*/false>(std::move(value), std::move(functor_), index_);
+        Atomic<std::size_t>& get_done() & noexcept { return self.done_; }
+        void set_value_skip_done(value_type&& value) && noexcept {
+            self.set_value_impl</*CheckDone=*/false>(std::move(value), std::move(functor), index);
         }
+    };
 
-    private:
-        functor_type functor_;
-        select_connection& self_;
-        std::size_t index_;
+    template <typename SelectCase>
+    struct case_slot_ctor final {
+        using functor_type = typename SelectCase::functor_type;
+
+        functor_type functor;
+        select_connection& self;
+        std::size_t index;
+
+        constexpr case_slot_type<SelectCase> operator()() && noexcept {
+            return case_slot_type<SelectCase>{ .functor = std::move(functor), .self = self, .index = index };
+        }
     };
 
     struct select_delete_this {
         select_connection* this_;
-        void operator()() { delete this_; }
+        void operator()() noexcept { delete this_; }
     };
 
     template <typename SelectCaseT>
-    using Connection = subscribe_connection<typename SelectCaseT::signal_type, case_slot_type<SelectCaseT>>;
+    using Connection = ConnectionFor<typename SelectCaseT::signal_type, case_slot_ctor<SelectCaseT>>;
     static constexpr std::size_t N = sizeof...(SelectCaseTs);
 
     template <std::size_t... Indexes>
@@ -98,30 +100,23 @@ private:
         std::index_sequence<Indexes...>
     ) {
         return std::make_tuple(meta::lazy_eval{ [a_case = std::move(std::get<Indexes>(cases)), &self]() mutable {
-            return Connection<SelectCaseTs>{
-                std::move(a_case.signal),
-                [functor = std::move(a_case.functor), &self]() mutable {
-                    return case_slot_type<SelectCaseTs>{ std::move(functor), self, Indexes };
-                },
-            };
+            return std::move(a_case.signal)
+                .subscribe(
+                    case_slot_ctor<SelectCaseTs>{ .functor = std::move(a_case.functor), .self = self, .index = Indexes }
+                );
         } }...);
     }
 
 public:
-    select_connection(
-        std::tuple<SelectCaseTs...>&& cases,
-        serial_executor<Atomic>& an_executor,
-        slot<ValueT, meta::unit>& slot
-    )
+    select_connection(std::tuple<SelectCaseTs...>&& cases, serial_executor<Atomic>& an_executor, SlotCtorT slot_ctor)
         : parallel_{ make_connections(*this, std::move(cases), std::make_index_sequence<N>()),
                      an_executor,
                      select_delete_this{ this } },
-          slot_{ slot } {}
+          slot_{ std::move(slot_ctor)() } {}
 
 public: // connection
-    cancel_handle& emit() && {
-        constexpr bool connections_are_ordered =
-            (std::derived_from<ConnectionFor<typename SelectCaseTs::signal_type>, ordered_connection> && ... && true);
+    CancelHandle auto emit() && noexcept {
+        constexpr bool connections_are_ordered = (Ordered<Connection<SelectCaseTs>> && ...);
 
         if constexpr (connections_are_ordered) {
             // if all connections are ordered, then we don't need to sort them
@@ -134,13 +129,13 @@ public: // connection
     }
 
 private:
-    [[nodiscard]] bool check_done() { return kcas(kcas_arg<std::size_t>{ .a = &done_, .e = 0, .n = 1 }); }
+    [[nodiscard]] bool check_done() noexcept { return kcas(kcas_arg<std::size_t>{ .a = &done_, .e = 0, .n = 1 }); }
 
     template <bool CheckDone, typename CaseValueT, typename CaseF>
-    void set_value_impl(CaseValueT&& case_value, CaseF&& case_functor, std::size_t index) {
+    void set_value_impl(CaseValueT&& case_value, CaseF&& case_functor, std::size_t index) noexcept {
         if (!CheckDone || check_done()) {
             ValueT value = std::move(case_functor)(std::move(case_value));
-            slot_.set_value(std::move(value));
+            std::move(slot_).set_value(std::move(value));
             parallel_.schedule_try_cancel_beside(index);
         }
 
@@ -150,27 +145,27 @@ private:
         }
     }
 
-    void set_error_impl() {
+    void set_error_impl() noexcept {
         const bool is_last = parallel_.increment_and_check();
         if (!is_last) {
             return;
         }
 
         if (check_done()) {
-            slot_.set_error(meta::unit{});
+            std::move(slot_).set_error(meta::unit{});
         }
 
         parallel_.schedule_delete_this();
     }
 
-    void set_null_impl() {
+    void set_null_impl() noexcept {
         const bool is_last = parallel_.increment_and_check();
         if (!is_last) {
             return;
         }
 
         if (check_done()) {
-            slot_.set_null();
+            std::move(slot_).set_null();
         }
 
         parallel_.schedule_delete_this();
@@ -178,23 +173,23 @@ private:
 
 private:
     parallel_connection<select_delete_this, Atomic, Connection<SelectCaseTs>...> parallel_;
-    slot<ValueT, meta::unit>& slot_;
+    slot_type slot_;
     alignas(hardware_destructive_interference_size) Atomic<std::size_t> done_{ 0 }; // word-size for CAS2
 };
 
-template <template <typename> typename Atomic, typename ValueT, typename... SelectCaseTs>
-struct select_connection_box final : connection {
-    using connection_type = select_connection<Atomic, ValueT, SelectCaseTs...>;
+template <template <typename> typename Atomic, typename ValueT, typename SlotCtorT, typename... SelectCaseTs>
+struct select_connection_box final {
+    using connection_type = select_connection<Atomic, ValueT, SlotCtorT, SelectCaseTs...>;
 
 public:
     select_connection_box(
         std::tuple<SelectCaseTs...>&& cases,
         serial_executor<Atomic>& an_executor,
-        slot<ValueT, meta::unit>& slot
+        SlotCtorT slot_ctor
     )
-        : connection_{ std::make_unique<connection_type>(std::move(cases), an_executor, slot) } {}
+        : connection_{ std::make_unique<connection_type>(std::move(cases), an_executor, std::move(slot_ctor)) } {}
 
-    cancel_handle& emit() && override {
+    CancelHandle auto emit() && noexcept {
         auto& a_connection = *DEBUG_ASSERT_VAL(connection_.release());
         return std::move(a_connection).emit();
     }
@@ -235,15 +230,23 @@ public:
 
     template <SelectFunctorFor<default_case_signal> NextF>
     constexpr auto default_(NextF&& functor) && {
-        return std::move(*this).case_(default_case_signal{ meta::unit{} }, std::move(functor));
+        return std::move(*this).case_(
+            default_case_signal{ .maybe_result{ meta::result<value_type, error_type>{ meta::ok_tag } } },
+            std::move(functor)
+        );
     }
 
 public: // SomeSignal
-    select_connection_box<Atomic, ValueT, SelectCaseTs...> subscribe(slot<value_type, error_type>& slot) && {
-        return select_connection_box<Atomic, ValueT, SelectCaseTs...>{ std::move(cases_), executor_, slot };
+    template <SlotCtor<value_type, error_type> SlotCtorT>
+    constexpr Connection auto subscribe(SlotCtorT&& slot_ctor) && noexcept {
+        return select_connection_box<Atomic, ValueT, SlotCtorT, SelectCaseTs...>{
+            std::move(cases_),
+            executor_,
+            std::move(slot_ctor),
+        };
     }
 
-    executor& get_executor() & { return executor_.get_inner(); }
+    executor& get_executor() noexcept { return executor_.get_inner(); }
 
 private:
     std::tuple<SelectCaseTs...> cases_;

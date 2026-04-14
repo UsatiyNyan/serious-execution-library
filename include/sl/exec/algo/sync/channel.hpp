@@ -29,7 +29,54 @@
 namespace sl::exec {
 namespace detail {
 
-template <typename ValueT, typename Mutex, template <typename> typename Atomic>
+template <typename V, typename E>
+struct channel_slot_callback {
+    virtual ~channel_slot_callback() = default;
+    virtual void set_value(V&& value) noexcept = 0;
+    virtual void set_error(E&& error) noexcept = 0;
+    virtual void set_null() noexcept = 0;
+    virtual void set_value_skip_done(V&& value) noexcept { set_value(std::move(value)); }
+};
+
+template <typename V, typename E, typename SlotCtorT>
+struct channel_slot_callback_impl final : channel_slot_callback<V, E> {
+    using SlotT = SlotFrom<SlotCtorT>;
+
+    explicit channel_slot_callback_impl(SlotCtorT slot_ctor) : slot_(std::move(slot_ctor)()) {}
+
+    void set_value(V&& value) noexcept override { std::move(slot_).set_value(std::move(value)); }
+    void set_error(E&& error) noexcept override { std::move(slot_).set_error(std::move(error)); }
+    void set_null() noexcept override { std::move(slot_).set_null(); }
+
+    SlotT& get_slot() & noexcept { return slot_; }
+
+private:
+    SlotT slot_;
+};
+
+// Specialization for select slots that have get_done() and set_value_skip_done()
+template <typename V, typename E, typename SlotCtorT>
+    requires requires(SlotFrom<SlotCtorT>& s, V&& v) {
+        s.get_done();
+        std::move(s).set_value_skip_done(std::move(v));
+    }
+struct channel_slot_callback_impl<V, E, SlotCtorT> final : channel_slot_callback<V, E> {
+    using SlotT = SlotFrom<SlotCtorT>;
+
+    explicit channel_slot_callback_impl(SlotCtorT slot_ctor) : slot_(std::move(slot_ctor)()) {}
+
+    void set_value(V&& value) noexcept override { std::move(slot_).set_value(std::move(value)); }
+    void set_error(E&& error) noexcept override { std::move(slot_).set_error(std::move(error)); }
+    void set_null() noexcept override { std::move(slot_).set_null(); }
+    void set_value_skip_done(V&& value) noexcept override { std::move(slot_).set_value_skip_done(std::move(value)); }
+
+    SlotT& get_slot() & noexcept { return slot_; }
+
+private:
+    SlotT slot_;
+};
+
+template <typename V, typename Mutex, template <typename> typename Atomic>
 struct [[nodiscard]] channel_impl {
     struct channel_node : meta::immovable {
         virtual ~channel_node() = default;
@@ -43,38 +90,36 @@ struct [[nodiscard]] channel_impl {
     struct send_node
         : channel_node
         , meta::intrusive_list_node<send_node> {
-        send_node(ValueT&& value, slot<meta::unit, meta::unit>& slot) : value_{ std::move(value) }, slot_{ slot } {}
+        send_node(V&& value, channel_slot_callback<meta::unit, meta::unit>& callback)
+            : value_{ std::move(value) }, callback_{ callback } {}
 
-        send_node(ValueT&& value, select_slot<Atomic, meta::unit>& select_slot)
-            : value_{ std::move(value) }, slot_{ select_slot }, select_{ select_slot } {
-            channel_node::select_done = &select_slot.get_done();
+        send_node(V&& value, channel_slot_callback<meta::unit, meta::unit>& callback, Atomic<std::size_t>& select_done)
+            : value_{ std::move(value) }, callback_{ callback } {
+            channel_node::select_done = &select_done;
         }
 
-        ValueT& get_value() & { return value_; }
-        slot<meta::unit, meta::unit>& get_slot() & { return slot_; }
-        meta::maybe<select_slot<Atomic, meta::unit>&>& get_select() & { return select_; }
+        V& get_value() & { return value_; }
+        channel_slot_callback<meta::unit, meta::unit>& get_callback() & { return callback_; }
 
     private:
-        ValueT value_;
-        slot<meta::unit, meta::unit>& slot_;
-        meta::maybe<select_slot<Atomic, meta::unit>&> select_ = meta::null;
+        V value_;
+        channel_slot_callback<meta::unit, meta::unit>& callback_;
     };
 
     struct recv_node
         : channel_node
         , meta::intrusive_list_node<recv_node> {
-        explicit recv_node(slot<ValueT, meta::unit>& slot) : slot_{ slot } {}
+        explicit recv_node(channel_slot_callback<V, meta::unit>& callback) : callback_{ callback } {}
 
-        explicit recv_node(select_slot<Atomic, ValueT>& select_slot) : slot_{ select_slot }, select_{ select_slot } {
-            channel_node::select_done = &select_slot.get_done();
+        recv_node(channel_slot_callback<V, meta::unit>& callback, Atomic<std::size_t>& select_done)
+            : callback_{ callback } {
+            channel_node::select_done = &select_done;
         }
 
-        slot<ValueT, meta::unit>& get_slot() & { return slot_; }
-        meta::maybe<select_slot<Atomic, ValueT>&>& get_select() & { return select_; }
+        channel_slot_callback<V, meta::unit>& get_callback() & { return callback_; }
 
     private:
-        slot<ValueT, meta::unit>& slot_;
-        meta::maybe<select_slot<Atomic, ValueT>&> select_ = meta::null;
+        channel_slot_callback<V, meta::unit>& callback_;
     };
 
 public:
@@ -88,13 +133,13 @@ public:
 
         if (is_closed_) {
             lock.unlock();
-            a_send_node.get_slot().set_error(meta::unit{});
+            a_send_node.get_callback().set_error(meta::unit{});
             return;
         }
 
         if (a_send_node.requested_cancel) {
             lock.unlock();
-            a_send_node.get_slot().set_null();
+            a_send_node.get_callback().set_null();
             return;
         }
 
@@ -139,7 +184,7 @@ public:
         const auto enqueue_impl = [&] {
             if (is_closed_) {
                 lock.unlock();
-                a_recv_node.get_slot().set_error(meta::unit{});
+                a_recv_node.get_callback().set_error(meta::unit{});
             } else {
                 a_recv_node.queued_in = this;
                 recvq_.push_back(&a_recv_node);
@@ -148,7 +193,7 @@ public:
 
         if (a_recv_node.requested_cancel) {
             lock.unlock();
-            a_recv_node.get_slot().set_null();
+            a_recv_node.get_callback().set_null();
             return;
         }
 
@@ -187,12 +232,12 @@ public:
         }
     }
 
-    void close(slot<meta::unit, meta::unit>& close_slot) {
+    void close(channel_slot_callback<meta::unit, meta::unit>& close_callback) {
         std::unique_lock<Mutex> lock{ m_ };
         const bool was_closed = std::exchange(is_closed_, true);
         if (was_closed) {
             lock.unlock();
-            close_slot.set_error(meta::unit{});
+            close_callback.set_error(meta::unit{});
             return;
         }
 
@@ -206,10 +251,10 @@ public:
         lock.unlock();
 
         for (recv_node& node : pending_recvs) {
-            node.get_slot().set_error(meta::unit{});
+            node.get_callback().set_error(meta::unit{});
         }
 
-        close_slot.set_value(meta::unit{});
+        close_callback.set_value(meta::unit{});
     }
 
     void unsend(send_node& a_node) & { un_impl(sendq_, a_node); }
@@ -232,8 +277,8 @@ private:
 
             if (success) {
                 lock.unlock();
-                a_recv_node.get_select()->set_value_skip_done(std::move(a_send_node.get_value()));
-                a_send_node.get_select()->set_value_skip_done(meta::unit{});
+                a_recv_node.get_callback().set_value_skip_done(std::move(a_send_node.get_value()));
+                a_send_node.get_callback().set_value_skip_done(meta::unit{});
             }
 
             return success;
@@ -244,8 +289,8 @@ private:
 
             if (success) {
                 lock.unlock();
-                a_recv_node.get_slot().set_value(std::move(a_send_node.get_value()));
-                a_send_node.get_select()->set_value_skip_done(meta::unit{});
+                a_recv_node.get_callback().set_value(std::move(a_send_node.get_value()));
+                a_send_node.get_callback().set_value_skip_done(meta::unit{});
             }
 
             return success;
@@ -256,16 +301,16 @@ private:
 
             if (success) {
                 lock.unlock();
-                a_recv_node.get_select()->set_value_skip_done(std::move(a_send_node.get_value()));
-                a_send_node.get_slot().set_value(meta::unit{});
+                a_recv_node.get_callback().set_value_skip_done(std::move(a_send_node.get_value()));
+                a_send_node.get_callback().set_value(meta::unit{});
             }
 
             return success;
         }
 
         lock.unlock();
-        a_recv_node.get_slot().set_value(std::move(a_send_node.get_value()));
-        a_send_node.get_slot().set_value(meta::unit{});
+        a_recv_node.get_callback().set_value(std::move(a_send_node.get_value()));
+        a_send_node.get_callback().set_value(meta::unit{});
 
         return true;
     }
@@ -287,7 +332,7 @@ private:
 
         if (std::exchange(node.requested_cancel, true)) {
             lock.unlock();
-            node.get_slot().set_null();
+            node.get_callback().set_null();
         }
     }
 
@@ -298,150 +343,147 @@ private:
     Mutex m_{};
 };
 
-template <typename ValueT, typename Mutex, template <typename> typename Atomic>
+template <typename V, typename Mutex, template <typename> typename Atomic>
 struct [[nodiscard]] channel_send_signal {
-    using impl_type = channel_impl<ValueT, Mutex, Atomic>;
+    using impl_type = channel_impl<V, Mutex, Atomic>;
 
     using value_type = meta::unit;
     using error_type = meta::unit;
 
-    struct [[nodiscard]] connection_type final
-        : ordered_connection
-        , cancel_handle {
-    public:
-        connection_type(ValueT&& value, slot<value_type, error_type>& slot, impl_type& impl)
-            : node_{ std::move(value), slot }, impl_{ impl } {}
+    template <typename SlotCtorT>
+    struct [[nodiscard]] connection_type final {
+        using slot_type = SlotFrom<SlotCtorT>;
 
-        connection_type(ValueT&& value, select_slot<Atomic, value_type>& select_slot, impl_type& impl)
-            : node_{ std::move(value), select_slot }, impl_{ impl } {}
+        connection_type(SlotCtorT slot_ctor, V&& value, impl_type& impl)
+            : callback_{ std::move(slot_ctor) }, node_{ [&] {
+                  if constexpr (requires { callback_.get_slot().get_done(); }) {
+                      return
+                          typename impl_type::send_node{ std::move(value), callback_, callback_.get_slot().get_done() };
+                  } else {
+                      return typename impl_type::send_node{ std::move(value), callback_ };
+                  }
+              }() },
+              impl_{ impl } {}
 
-    public: // ordered_connection
-        cancel_handle& emit() && override {
+        CancelHandle auto emit() && noexcept {
             impl_.send(node_);
-            return *this;
+            return proxy_cancel_handle{ this };
         }
-        std::uintptr_t get_ordering() const& override { return std::bit_cast<std::uintptr_t>(&impl_); }
-
-    public: // cancel_handle
-        void try_cancel() & override { impl_.unsend(node_); }
+        std::uintptr_t get_ordering() const noexcept { return std::bit_cast<std::uintptr_t>(&impl_); }
+        void try_cancel() && noexcept { impl_.unsend(node_); }
 
     private:
+        channel_slot_callback_impl<value_type, error_type, SlotCtorT> callback_;
         typename impl_type::send_node node_;
         impl_type& impl_;
     };
 
+    V value;
+    impl_type& impl;
+
 public:
-    constexpr channel_send_signal(ValueT&& value, impl_type& impl) : value_{ std::move(value) }, impl_{ impl } {}
-
-    connection_type subscribe(slot<value_type, error_type>& slot) && {
-        return connection_type{ std::move(value_), slot, impl_ };
+    template <SlotCtorFor<channel_send_signal> SlotCtorT>
+    constexpr Connection auto subscribe(SlotCtorT&& slot_ctor) && noexcept {
+        return connection_type<SlotCtorT>{ std::move(slot_ctor), std::move(value), impl };
     }
-    connection_type subscribe(select_slot<Atomic, value_type>& select_slot) && {
-        return connection_type{ std::move(value_), select_slot, impl_ };
-    }
-    executor& get_executor() & { return inline_executor(); }
 
-private:
-    ValueT value_;
-    impl_type& impl_;
+    static executor& get_executor() noexcept { return inline_executor(); }
 };
 
-template <typename ValueT, typename Mutex, template <typename> typename Atomic>
+template <typename V, typename Mutex, template <typename> typename Atomic>
 struct [[nodiscard]] channel_receive_signal {
-    using impl_type = channel_impl<ValueT, Mutex, Atomic>;
+    using impl_type = channel_impl<V, Mutex, Atomic>;
 
-    using value_type = ValueT;
+    using value_type = V;
     using error_type = meta::unit;
 
-    struct [[nodiscard]] connection_type final
-        : ordered_connection
-        , cancel_handle {
-    public:
-        connection_type(slot<value_type, error_type>& slot, impl_type& impl) : node_{ slot }, impl_{ impl } {}
+    template <typename SlotCtorT>
+    struct [[nodiscard]] connection_type final {
+        using slot_type = SlotFrom<SlotCtorT>;
 
-        connection_type(select_slot<Atomic, value_type>& select_slot, impl_type& impl)
-            : node_{ select_slot }, impl_{ impl } {}
+        connection_type(SlotCtorT slot_ctor, impl_type& impl)
+            : callback_{ std::move(slot_ctor) }, node_{ [&] {
+                  if constexpr (requires { callback_.get_slot().get_done(); }) {
+                      return typename impl_type::recv_node{ callback_, callback_.get_slot().get_done() };
+                  } else {
+                      return typename impl_type::recv_node{ callback_ };
+                  }
+              }() },
+              impl_{ impl } {}
 
-    public: // ordered_connection
-        cancel_handle& emit() && override {
+        CancelHandle auto emit() && noexcept {
             impl_.receive(node_);
-            return *this;
+            return proxy_cancel_handle{ this };
         }
-        std::uintptr_t get_ordering() const& override { return std::bit_cast<std::uintptr_t>(&impl_); }
-
-    public: // cancel_handle
-        void try_cancel() & override { impl_.unreceive(node_); }
+        std::uintptr_t get_ordering() const noexcept { return std::bit_cast<std::uintptr_t>(&impl_); }
+        void try_cancel() && noexcept { impl_.unreceive(node_); }
 
     private:
+        channel_slot_callback_impl<value_type, error_type, SlotCtorT> callback_;
         typename impl_type::recv_node node_;
         impl_type& impl_;
     };
 
+    impl_type& impl;
+
 public:
-    constexpr explicit channel_receive_signal(impl_type& impl) : impl_{ impl } {}
-
-    connection_type subscribe(slot<value_type, error_type>& slot) && { return connection_type{ slot, impl_ }; }
-    connection_type subscribe(select_slot<Atomic, value_type>& select_slot) && {
-        return connection_type{ select_slot, impl_ };
+    template <SlotCtorFor<channel_receive_signal> SlotCtorT>
+    constexpr Connection auto subscribe(SlotCtorT&& slot_ctor) && noexcept {
+        return connection_type<SlotCtorT>{ std::move(slot_ctor), impl };
     }
-    executor& get_executor() & { return inline_executor(); }
 
-private:
-    impl_type& impl_;
+    static executor& get_executor() noexcept { return inline_executor(); }
 };
 
-template <typename ValueT, typename Mutex, template <typename> typename Atomic>
+template <typename V, typename Mutex, template <typename> typename Atomic>
 struct [[nodiscard]] channel_close_signal {
-    using impl_type = channel_impl<ValueT, Mutex, Atomic>;
+    using impl_type = channel_impl<V, Mutex, Atomic>;
 
     using value_type = meta::unit;
     using error_type = meta::unit;
 
-    struct [[nodiscard]] connection_type final : connection {
-        connection_type(slot<value_type, error_type>& slot, impl_type& impl) : slot_{ slot }, impl_{ impl } {}
+    template <typename SlotCtorT>
+    struct [[nodiscard]] connection_type final {
+        connection_type(SlotCtorT slot_ctor, impl_type& impl) : callback_{ std::move(slot_ctor) }, impl_{ impl } {}
 
-    public: // connection
-        cancel_handle& emit() && override {
-            impl_.close(slot_);
-            return dummy_cancel_handle();
+        CancelHandle auto emit() && noexcept {
+            impl_.close(callback_);
+            return dummy_cancel_handle{};
         }
 
     private:
-        slot<value_type, error_type>& slot_;
+        channel_slot_callback_impl<value_type, error_type, SlotCtorT> callback_;
         impl_type& impl_;
     };
 
+    impl_type& impl;
+
 public:
-    constexpr explicit channel_close_signal(impl_type& impl) : impl_{ impl } {}
+    template <SlotCtor<value_type, error_type> SlotCtorT>
+    constexpr Connection auto subscribe(SlotCtorT slot_ctor) && noexcept {
+        return connection_type<SlotCtorT>{ std::move(slot_ctor), impl };
+    }
 
-    connection_type subscribe(slot<value_type, error_type>& slot) && { return connection_type{ slot, impl_ }; }
-    executor& get_executor() & { return inline_executor(); }
-
-private:
-    impl_type& impl_;
+    static executor& get_executor() noexcept { return inline_executor(); }
 };
 
 } // namespace detail
 
-template <typename ValueT, typename Mutex = detail::mutex, template <typename> typename Atomic = detail::atomic>
+template <typename V, typename Mutex = detail::mutex, template <typename> typename Atomic = detail::atomic>
 struct [[nodiscard]] channel final {
-    constexpr Signal<meta::unit, meta::unit> auto send(ValueT&& value) & {
-        return detail::channel_send_signal<ValueT, Mutex, Atomic>{ std::move(value), impl_ };
+    constexpr SomeSignal auto send(V&& value) & {
+        return detail::channel_send_signal<V, Mutex, Atomic>{ .value = std::move(value), .impl = impl_ };
     }
-    constexpr Signal<ValueT, meta::unit> auto receive() & {
-        return detail::channel_receive_signal<ValueT, Mutex, Atomic>{ impl_ };
-    }
-    constexpr Signal<meta::unit, meta::unit> auto close() & {
-        return detail::channel_close_signal<ValueT, Mutex, Atomic>{ impl_ };
-    }
+    constexpr SomeSignal auto receive() & { return detail::channel_receive_signal<V, Mutex, Atomic>{ .impl = impl_ }; }
+    constexpr SomeSignal auto close() & { return detail::channel_close_signal<V, Mutex, Atomic>{ .impl = impl_ }; }
 
 private:
-    detail::channel_impl<ValueT, Mutex, Atomic> impl_;
+    detail::channel_impl<V, Mutex, Atomic> impl_;
 };
 
-template <typename ValueT, typename Mutex = detail::mutex, template <typename> typename Atomic = detail::atomic>
-constexpr arc<channel<ValueT, Mutex, Atomic>, Atomic> make_channel() {
-    return arc<channel<ValueT, Mutex, Atomic>, Atomic>::make();
+template <typename V, typename Mutex = detail::mutex, template <typename> typename Atomic = detail::atomic>
+constexpr arc<channel<V, Mutex, Atomic>, Atomic> make_channel() {
+    return arc<channel<V, Mutex, Atomic>, Atomic>::make();
 }
 
 } // namespace sl::exec
