@@ -5,35 +5,34 @@
 #pragma once
 
 #include "sl/exec/model/concept.hpp"
-#include "sl/exec/model/connection.hpp"
 
 namespace sl::exec {
 namespace detail {
 
-template <typename F, typename ValueT, typename ErrorT>
-struct [[nodiscard]] schedule_connection final : task_node, connection {
-    constexpr schedule_connection(F&& functor, slot<ValueT, ErrorT>& slot, executor& executor)
-        : functor_{ std::move(functor) }, slot_{ slot }, executor_{ executor } {}
+template <typename F, typename SlotCtorT>
+struct [[nodiscard]] schedule_connection final : task_node {
+    constexpr schedule_connection(F&& f, SlotCtorT&& slot_ctor, executor& ex) noexcept
+        : f_(std::move(f)), slot_(std::move(slot_ctor)()), ex_(ex) {}
 
-    cancel_handle& emit() && noexcept override {
-        executor_.schedule(*this);
-        return dummy_cancel_handle();
+    CancelHandle auto emit() && noexcept {
+        ex_.schedule(*this);
+        return dummy_cancel_handle{};
     }
 
     void execute() noexcept override {
-        auto result = functor_();
+        auto result = f_();
         if (result.has_value()) {
-            slot_.set_value(std::move(result).value());
+            std::move(slot_).set_value(std::move(result).value());
         } else {
-            slot_.set_error(std::move(result).error());
+            std::move(slot_).set_error(std::move(result).error());
         }
     }
-    void cancel() noexcept override { slot_.set_null(); }
+    void cancel() noexcept override { std::move(slot_).set_null(); }
 
 private:
-    F functor_;
-    slot<ValueT, ErrorT>& slot_;
-    executor& executor_;
+    F f_;
+    SlotFrom<SlotCtorT> slot_;
+    executor& ex_;
 };
 
 template <typename F>
@@ -42,32 +41,30 @@ struct [[nodiscard]] schedule_signal final {
     using value_type = typename result_type::value_type;
     using error_type = typename result_type::error_type;
 
-public:
-    constexpr schedule_signal(F functor, executor& executor) : functor_{ std::move(functor) }, executor_{ executor } {}
+    F f;
+    executor& ex;
 
-    schedule_connection<F, value_type, error_type> subscribe(slot<value_type, error_type>& slot) && {
-        return schedule_connection<F, value_type, error_type>{
-            /* .functor = */ std::move(functor_),
-            /* .slot = */ slot,
-            /* .executor = */ executor_,
+public:
+    template <SlotCtor<value_type, error_type> SlotCtorT>
+    constexpr Connection auto subscribe(SlotCtorT&& slot_ctor) && noexcept {
+        return schedule_connection<F, SlotCtorT>{
+            std::move(f),
+            std::move(slot_ctor),
+            ex,
         };
     }
 
-    executor& get_executor() { return exec::inline_executor(); }
-
-private:
-    F functor_;
-    executor& executor_;
+    static executor& get_executor() noexcept { return inline_executor(); }
 };
 
 } // namespace detail
 
 template <typename FV>
-constexpr SomeSignal auto schedule(executor& executor, FV&& functor) {
+constexpr SomeSignal auto schedule(executor& an_executor, FV&& f) {
     using F = std::decay_t<FV>;
     return detail::schedule_signal<F>{
-        /* .functor = */ std::forward<FV>(functor),
-        /* .executor = */ executor,
+        .f = std::forward<FV>(f),
+        .ex = an_executor,
     };
 }
 
