@@ -191,10 +191,6 @@ async<...> coro(T x);
 
 - [ ] lock-free channel
   - [ ] lock-free list
-- [ ] slots:
-  - [ ] noexcept
-  - [ ] set_result(...) -> bool
-  - [ ] comptime
 - [ ] thread::pool::distributed
 - [ ] injectable thread-local storage for "pseudo-threads"
 - [ ] TESTS

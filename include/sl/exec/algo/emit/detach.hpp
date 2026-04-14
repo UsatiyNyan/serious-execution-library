@@ -4,38 +4,38 @@
 
 #pragma once
 
-#include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/model/concept.hpp"
 
 namespace sl::exec {
 namespace detail {
 
 template <SomeSignal SignalT>
-struct [[nodiscard]] detach_connection final : connection {
+struct [[nodiscard]] detach_connection final {
     using value_type = typename SignalT::value_type;
     using error_type = typename SignalT::error_type;
 
-    struct detach_slot final : slot<value_type, error_type> {
-        explicit detach_slot(detach_connection* self) : self_{ self } {}
+    struct detach_slot final {
+        detach_connection* self;
 
-        void set_value(value_type&&) & override { delete self_; }
-        void set_error(error_type&&) & override { delete self_; }
-        void set_null() & override { delete self_; }
+        constexpr void set_value(value_type&&) && noexcept { delete self; }
+        constexpr void set_error(error_type&&) && noexcept { delete self; }
+        constexpr void set_null() && noexcept { delete self; }
+    };
 
-    private:
-        detach_connection* self_;
+    struct detach_slot_ctor final {
+        detach_connection* self;
+
+        constexpr auto operator()() && noexcept { return detach_slot{ self }; }
     };
 
 public:
-    constexpr explicit detach_connection(SignalT signal)
-        : connection_{ std::move(signal), [this] { return detach_slot{ this }; } } {}
+    constexpr detach_connection(SignalT signal)
+        : connection_{ std::move(signal).subscribe(detach_slot_ctor{ this }) } {}
 
-    cancel_handle& emit() && override {
-        return std::move(connection_).emit();
-    }
+    CancelHandle auto emit() && noexcept { return std::move(connection_).emit(); }
 
 private:
-    subscribe_connection<SignalT, detach_slot> connection_;
+    ConnectionFor<SignalT, detach_slot_ctor> connection_;
 };
 
 struct detach_emit {
