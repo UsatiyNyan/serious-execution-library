@@ -5,8 +5,6 @@
 #pragma once
 
 #include "sl/exec/algo/make/as_signal.hpp"
-#include "sl/exec/model/connection.hpp"
-#include "sl/exec/model/syntax.hpp"
 
 #include <sl/meta/monad/maybe.hpp>
 #include <sl/meta/monad/result.hpp>
@@ -18,72 +16,69 @@
 namespace sl::exec {
 namespace detail {
 
-template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] result_connection final : connection {
-    constexpr result_connection(meta::maybe<meta::result<ValueT, ErrorT>> maybe_result, slot<ValueT, ErrorT>& slot)
-        : maybe_result_{ std::move(maybe_result) }, slot_{ slot } {}
+template <typename V, typename E, typename SlotT>
+struct [[nodiscard]] result_connection final {
+    meta::maybe<meta::result<V, E>> maybe_result;
+    SlotT slot;
 
-    cancel_handle& emit() && noexcept override {
-        fulfill_slot(slot_, std::move(maybe_result_));
-        return dummy_cancel_handle();
+    constexpr CancelHandle auto emit() && noexcept {
+        fulfill_slot(std::move(slot), std::move(maybe_result));
+        return dummy_cancel_handle{};
     }
-
-private:
-    meta::maybe<meta::result<ValueT, ErrorT>> maybe_result_;
-    slot<ValueT, ErrorT>& slot_;
 };
 
-template <typename ValueT, typename ErrorT>
+template <typename V, typename E>
 struct [[nodiscard]] result_signal final {
-    using value_type = ValueT;
-    using error_type = ErrorT;
+    using value_type = V;
+    using error_type = E;
+
+    meta::maybe<meta::result<value_type, error_type>> maybe_result;
 
 public:
-    constexpr explicit result_signal(meta::maybe<meta::result<value_type, error_type>> maybe_result)
-        : maybe_result_{ std::move(maybe_result) } {}
-
-    result_connection<value_type, error_type> subscribe(slot<value_type, error_type>& slot) && {
-        return result_connection<value_type, error_type>{ std::move(maybe_result_), slot };
+    template <SlotCtor<value_type, error_type> SlotCtorT>
+    constexpr Connection auto subscribe(SlotCtorT&& slot_ctor) && noexcept {
+        using SlotT = SlotFrom<SlotCtorT>;
+        return result_connection<value_type, error_type, SlotT>{
+            .maybe_result = std::move(maybe_result),
+            .slot = std::move(slot_ctor)(),
+        };
     }
 
-    executor& get_executor() { return inline_executor(); }
-
-private:
-    meta::maybe<meta::result<value_type, error_type>> maybe_result_;
+    static executor& get_executor() noexcept { return inline_executor(); }
 };
 
-template <typename ValueT, typename ErrorT>
-struct as_signal<meta::result<ValueT, ErrorT>> {
+template <typename V, typename E>
+struct as_signal<meta::result<V, E>> {
     template <typename ResultTV>
-    constexpr static Signal<ValueT, ErrorT> auto call(ResultTV&& result) {
-        return result_signal<ValueT, ErrorT>{ std::forward<ResultTV>(result) };
+    constexpr static Signal<V, E> auto call(ResultTV&& result) noexcept {
+        return result_signal<V, E>{ .maybe_result = std::forward<ResultTV>(result) };
     }
 };
 
-template <typename ValueT, typename ErrorT>
-struct as_signal<meta::maybe<meta::result<ValueT, ErrorT>>> {
+template <typename V, typename E>
+struct as_signal<meta::maybe<meta::result<V, E>>> {
     template <typename MaybeResultTV>
-    constexpr static Signal<ValueT, ErrorT> auto call(MaybeResultTV&& result) {
-        return result_signal<ValueT, ErrorT>{ std::forward<MaybeResultTV>(result) };
+    constexpr static Signal<V, E> auto call(MaybeResultTV&& result) noexcept {
+        return result_signal<V, E>{ .maybe_result = std::forward<MaybeResultTV>(result) };
     }
 };
 
 } // namespace detail
 
-template <typename ValueTV>
-constexpr SomeSignal auto value_as_signal(ValueTV&& value) {
-    return as_signal(meta::ok(std::forward<ValueTV>(value)));
+template <typename VV>
+constexpr SomeSignal auto value_as_signal(VV&& value) {
+    return as_signal(meta::ok(std::forward<VV>(value)));
 }
 
-template <typename ErrorTV>
-constexpr SomeSignal auto error_as_signal(ErrorTV&& error) {
-    using ErrorT = std::decay_t<ErrorTV>;
-    return as_signal(meta::result<meta::unit, ErrorT>{ std::forward<ErrorTV>(error), meta::err_tag });
+template <typename EV>
+constexpr SomeSignal auto error_as_signal(EV&& error) {
+    using ErrorT = std::decay_t<EV>;
+    return as_signal(meta::result<meta::unit, ErrorT>{ std::forward<EV>(error), meta::err_tag });
 }
 
-template <typename ValueT = meta::unit, typename ErrorT = meta::undefined>
+template <typename V = meta::unit, typename E = meta::undefined>
 constexpr SomeSignal auto null_as_signal() {
-    return as_signal(meta::maybe<meta::result<ValueT, ErrorT>>{});
+    return as_signal(meta::maybe<meta::result<V, E>>{});
 }
 
 } // namespace sl::exec

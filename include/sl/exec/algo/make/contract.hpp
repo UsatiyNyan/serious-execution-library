@@ -13,78 +13,88 @@
 namespace sl::exec {
 namespace detail {
 
-template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] promise_signal final : meta::unique {
-    using value_type = ValueT;
-    using error_type = ErrorT;
+template <typename V, typename E>
+struct [[nodiscard]] promise_signal final {
+    template <SlotCtor<V, E> SlotCtorT>
+    struct promise_callback final : slot_callback<V, E> {
+        explicit promise_callback(SlotCtorT slot_ctor) : slot_(std::move(slot_ctor)()) {}
+
+        void set_result(meta::maybe<meta::result<V, E>>&& maybe_result) && noexcept override {
+            fulfill_slot(std::move(slot_), std::move(maybe_result));
+        }
+
+    private:
+        SlotFrom<SlotCtorT> slot_;
+    };
+
+    using value_type = V;
+    using error_type = E;
 
 public:
-    explicit promise_signal(slot<ValueT, ErrorT>** a_slot) : slot_{ a_slot } {}
+    slot_callback<V, E>** callback;
 
-    dummy_connection subscribe(slot<value_type, error_type>& slot) && {
-        *slot_ = &slot;
+public:
+    template <SlotCtor<V, E> SlotCtorT>
+    constexpr Connection auto subscribe(SlotCtorT&& slot_ctor) && noexcept {
+        *callback = new promise_callback<SlotCtorT>{ std::move(slot_ctor) };
         return dummy_connection{};
     }
 
-    executor& get_executor() { return inline_executor(); }
-
-private:
-    slot<ValueT, ErrorT>** slot_;
+    static executor& get_executor() noexcept { return inline_executor(); }
 };
 
 } // namespace detail
 
-template <typename ValueT, typename ErrorT>
-struct [[nodiscard]] promise : meta::finalizer<promise<ValueT, ErrorT>> {
-    explicit promise(slot<ValueT, ErrorT>* a_slot) : meta::finalizer<promise>{ finalize }, slot_{ a_slot } {
-        DEBUG_ASSERT(slot_ != nullptr);
+template <typename V, typename E>
+struct [[nodiscard]] promise : meta::finalizer<promise<V, E>> {
+    using result_type = meta::result<V, E>;
+
+    explicit promise(slot_callback<V, E>* a_callback)
+        : meta::finalizer<promise>{ [](promise& self) noexcept {
+              if (auto* const a_callback = std::exchange(self.callback_, nullptr); a_callback != nullptr) {
+                  std::move(*a_callback).set_result(meta::null);
+                  delete a_callback;
+              }
+          } },
+          callback_{ a_callback } {
+        DEBUG_ASSERT(callback_ != nullptr);
     }
 
-    static void finalize(promise& self) {
-        if (auto* const a_slot = std::exchange(self.slot_, nullptr); a_slot != nullptr) {
-            a_slot->set_null();
-        }
+    void set_value(V&& value) && noexcept {
+        std::move(*this).set_result(result_type{ meta::ok_tag, std::move(value) });
     }
-
-    void set_value(ValueT&& value) & {
-        auto* const slot = std::exchange(slot_, nullptr);
-        if (ASSERT_VAL(slot != nullptr)) {
-            slot->set_value(std::move(value));
-        }
+    void set_error(E&& error) && noexcept {
+        std::move(*this).set_result(result_type{ meta::err_tag, std::move(error) });
     }
-    void set_error(ErrorT&& error) & {
-        auto* const slot = std::exchange(slot_, nullptr);
-        if (ASSERT_VAL(slot != nullptr)) {
-            slot->set_error(std::move(error));
-        }
-    }
-    void set_null() & {
-        auto* const slot = std::exchange(slot_, nullptr);
-        if (ASSERT_VAL(slot != nullptr)) {
-            slot->set_null();
+    void set_null() && noexcept { std::move(*this).set_result(meta::null); }
+    void set_result(meta::maybe<result_type>&& maybe_result) && noexcept {
+        auto* const callback = std::exchange(callback_, nullptr);
+        if (ASSERT_VAL(callback != nullptr)) {
+            std::move(*callback).set_result(std::move(maybe_result));
+            delete callback;
         }
     }
 
 private:
-    slot<ValueT, ErrorT>* slot_;
+    slot_callback<V, E>* callback_;
 };
 
-template <typename ValueT, typename ErrorT, template <typename> typename Atomic = detail::atomic>
+template <typename V, typename E, template <typename> typename Atomic = detail::atomic>
 struct contract {
-    using future_type = detail::force_signal<detail::promise_signal<ValueT, ErrorT>, Atomic>;
-    using promise_type = promise<ValueT, ErrorT>;
+    using future_type = detail::force_signal<detail::promise_signal<V, E>, Atomic>;
+    using promise_type = promise<V, E>;
 
     future_type f;
     promise_type p;
 };
 
-template <typename ValueT, typename ErrorT, template <typename> typename Atomic = detail::atomic>
-contract<ValueT, ErrorT, Atomic> make_contract() {
-    slot<ValueT, ErrorT>* promise_slot = nullptr;
-    auto signal = force()(detail::promise_signal<ValueT, ErrorT>{ &promise_slot });
-    return contract<ValueT, ErrorT, Atomic>{
+template <typename V, typename E, template <typename> typename Atomic = detail::atomic>
+contract<V, E, Atomic> make_contract() {
+    slot_callback<V, E>* promise_callback = nullptr;
+    auto signal = force<Atomic>()(detail::promise_signal<V, E>{ .callback = &promise_callback });
+    return contract<V, E, Atomic>{
         .f = std::move(signal),
-        .p{ promise_slot },
+        .p{ promise_callback },
     };
 }
 
