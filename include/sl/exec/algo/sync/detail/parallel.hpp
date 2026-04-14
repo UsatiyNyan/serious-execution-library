@@ -6,7 +6,7 @@
 #pragma once
 
 #include "sl/exec/algo/sync/serial.hpp"
-#include "sl/exec/model/connection.hpp"
+#include "sl/exec/model/concept.hpp"
 #include "sl/exec/model/executor.hpp"
 #include "sl/exec/thread/detail/polyfill.hpp"
 
@@ -15,7 +15,6 @@
 #include <sl/meta/tuple/for_each.hpp>
 
 #include <cstdint>
-#include <limits>
 
 namespace sl::exec::detail {
 
@@ -23,18 +22,19 @@ template <typename DeleteThisT, template <typename> typename Atomic, typename...
 struct parallel_connection {
 private:
     static constexpr std::size_t N = sizeof...(ConnectionTs);
+    using cancel_handles_type = std::tuple<decltype(std::declval<ConnectionTs&&>().emit())...>;
 
     struct emit_task : task_node {
-        emit_task(parallel_connection& self, std::array<cancel_handle*, N> cancel_handles)
-            : cancel_handles_{ cancel_handles }, self_{ self } {}
+        emit_task(parallel_connection& self, cancel_handles_type cancel_handles)
+            : cancel_handles_{ std::move(cancel_handles) }, self_{ self } {}
 
-        void execute() noexcept override { self_.serialized_emit(cancel_handles_); }
+        void execute() noexcept override { self_.serialized_emit(std::move(cancel_handles_)); }
         void cancel() noexcept override {
             // FIXME: leaking for now, should be alright
         }
 
     private:
-        std::array<cancel_handle*, N> cancel_handles_;
+        cancel_handles_type cancel_handles_;
         parallel_connection& self_;
     };
 
@@ -73,67 +73,46 @@ public:
           delete_this_{ std::move(delete_this) } {}
 
 public: // connection
-    cancel_handle& emit() && {
-        std::array<cancel_handle*, N> cancel_handles{};
-        {
-            std::size_t i = 0;
-            meta::for_each(
-                [&](auto&& a_connection) { cancel_handles[i++] = &std::move(a_connection).emit(); },
-                std::move(connections_)
-            );
-            DEBUG_ASSERT(i == N);
-        }
-
-        emit_impl(cancel_handles);
-        return dummy_cancel_handle();
-    };
+    CancelHandle auto emit() && noexcept {
+        auto cancel_handles = std::apply(
+            [](auto&&... connections) { return cancel_handles_type{ std::move(connections).emit()... }; },
+            std::move(connections_)
+        );
+        emit_impl(std::move(cancel_handles));
+        return dummy_cancel_handle{};
+    }
 
     // all connections are subscribe_connection
-    cancel_handle& emit_ordered() && {
-        struct oc_item_type {
-            connection* c;
-            std::uintptr_t o; // order
-            std::size_t i; // index
-        };
-        std::array<oc_item_type, N> oc_items{};
-        {
-            constexpr meta::overloaded get_ordering{
-                [](const ordered_connection& oc) { return oc.get_ordering(); },
-                [](const connection&) { return std::numeric_limits<std::uintptr_t>::max(); },
-            };
-            std::size_t i = 0;
-            meta::for_each(
-                [&](auto& a_subscribe_connection) {
-                    oc_items[i] = oc_item_type{
-                        .c = &a_subscribe_connection,
-                        .o = get_ordering(a_subscribe_connection.get_inner()),
-                        .i = i,
-                    };
-                    ++i;
-                },
-                connections_
-            );
-            DEBUG_ASSERT(i == N);
-        }
-        std::stable_sort(oc_items.begin(), oc_items.end(), [](const oc_item_type& x, const oc_item_type& y) {
-            return x.o < y.o;
-        });
-
-        // Emit in sorted order, but store cancel_handles in ORIGINAL order
-        // This is critical: schedule_try_cancel_beside uses original indices
-        std::array<cancel_handle*, N> cancel_handles{};
-        for (const oc_item_type& oc_item : oc_items) {
-            cancel_handles[oc_item.i] = &std::move(*oc_item.c).emit();
-        }
-
-        emit_impl(cancel_handles);
-        return dummy_cancel_handle();
+    // Emit in sorted order by ordering, but store cancel_handles in ORIGINAL order
+    // This is critical: schedule_try_cancel_beside uses original indices
+    CancelHandle auto emit_ordered() && noexcept {
+        auto cancel_handles = emit_in_order(std::make_index_sequence<N>{});
+        emit_impl(std::move(cancel_handles));
+        return dummy_cancel_handle{};
     }
 
 private:
-    void emit_impl(const std::array<cancel_handle*, N>& cancel_handles) {
+    template <std::size_t... Is>
+    cancel_handles_type emit_in_order(std::index_sequence<Is...>) {
+        std::array<std::pair<std::uintptr_t, std::size_t>, N> orderings{
+            std::pair{ get_connection_ordering(std::get<Is>(connections_)), Is }... //
+        };
+        std::stable_sort(orderings.begin(), orderings.end(), [](const auto& x, const auto& y) {
+            return x.first < y.first;
+        });
+
+        using maybe_handles_type = std::tuple<meta::maybe<std::tuple_element_t<Is, cancel_handles_type>>...>;
+        maybe_handles_type maybe_result;
+        for (const auto& [_, idx] : orderings) {
+            ((idx == Is ? (std::get<Is>(maybe_result).emplace(std::move(std::get<Is>(connections_)).emit()), 0) : 0),
+             ...);
+        }
+        return cancel_handles_type{ std::move(*std::get<Is>(maybe_result))... };
+    }
+
+    void emit_impl(cancel_handles_type cancel_handles) {
         DEBUG_ASSERT(!tasks_.emit.has_value());
-        executor_.schedule(tasks_.emit.emplace(*this, cancel_handles));
+        executor_.schedule(tasks_.emit.emplace(*this, std::move(cancel_handles)));
     }
 
 public: // parallel
@@ -154,24 +133,25 @@ public: // parallel
     }
 
 private: // serialized
-    static void serialized_try_cancel_beside_impl(
-        const std::array<cancel_handle*, N>& cancel_handles,
-        std::size_t excluded_index
+    template <std::size_t... Is>
+    static void try_cancel_beside_impl(
+        cancel_handles_type& cancel_handles,
+        std::size_t excluded_index,
+        std::index_sequence<Is...>
     ) {
-        for (std::size_t i = 0; i != cancel_handles.size(); ++i) {
-            if (i == excluded_index) {
-                continue;
-            }
-            ASSERT_VAL(cancel_handles[i])->try_cancel();
-        }
+        ((Is != excluded_index ? (std::move(std::get<Is>(cancel_handles)).try_cancel(), 0) : 0), ...);
     }
 
-    void serialized_emit(const std::array<cancel_handle*, N>& cancel_handles) {
-        state_.cancel_handles.emplace(cancel_handles);
+    static void serialized_try_cancel_beside_impl(cancel_handles_type& cancel_handles, std::size_t excluded_index) {
+        try_cancel_beside_impl(cancel_handles, excluded_index, std::make_index_sequence<N>{});
+    }
+
+    void serialized_emit(cancel_handles_type cancel_handles) {
+        state_.cancel_handles.emplace(std::move(cancel_handles));
 
         // can't touch tasks_.try_cancel or tasks_.try_cancel_beside
         if (state_.cancel_request.has_value()) {
-            serialized_try_cancel_beside_impl(cancel_handles, state_.cancel_request.value());
+            serialized_try_cancel_beside_impl(state_.cancel_handles.value(), state_.cancel_request.value());
             state_.cancel_request.reset();
         }
 
@@ -216,8 +196,8 @@ private:
     } tasks_;
 
     struct state {
-        meta::maybe<std::array<cancel_handle*, N>> cancel_handles{};
-        meta::maybe<std::size_t> cancel_request = {};
+        meta::maybe<cancel_handles_type> cancel_handles{};
+        meta::maybe<std::size_t> cancel_request{};
         bool delete_requested = false;
     } state_;
 

@@ -5,8 +5,7 @@
 #pragma once
 
 #include "sl/exec/algo/make/result.hpp"
-#include "sl/exec/algo/sched/continue_on.hpp"
-#include "sl/exec/algo/sched/start_on.hpp"
+#include "sl/exec/algo/sched/on.hpp"
 #include "sl/exec/algo/sync/serial.hpp"
 
 #include "sl/exec/thread/detail/atomic.hpp"
