@@ -5,7 +5,6 @@
 
 #pragma once
 
-#include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/algo/sync/detail/parallel.hpp"
 #include "sl/exec/model/concept.hpp"
 #include "sl/exec/thread/detail/atomic.hpp"
@@ -21,30 +20,43 @@
 namespace sl::exec {
 namespace detail {
 
-template <typename ValueT, typename ErrorT, template <typename> typename Atomic, SomeSignal... SignalTs>
+template <
+    typename ValueT,
+    typename ErrorT,
+    template <typename> typename Atomic,
+    typename SlotCtorT,
+    SomeSignal... SignalTs>
 struct all_connection final {
+    using slot_type = SlotFrom<SlotCtorT>;
+
 private:
     template <std::size_t Index, typename ElementValueT>
-    struct all_slot final : slot<ElementValueT, ErrorT> {
-        explicit all_slot(all_connection& self) : self_{ self } {}
+    struct all_slot final {
+        all_connection& self;
 
-        void set_value(ElementValueT&& value) & override { self_.set_value_impl<Index>(std::move(value)); }
-        void set_error(ErrorT&& error) & override { self_.set_error_impl(Index, std::move(error)); }
-        void set_null() & override { self_.set_null_impl(Index); }
+        void set_value(ElementValueT&& value) && noexcept { self.template set_value_impl<Index>(std::move(value)); }
+        void set_error(ErrorT&& error) && noexcept { self.set_error_impl(Index, std::move(error)); }
+        void set_null() && noexcept { self.set_null_impl(Index); }
+    };
 
-    private:
-        all_connection& self_;
+    template <std::size_t Index, typename ElementValueT>
+    struct all_slot_ctor final {
+        all_connection& self;
+
+        constexpr all_slot<Index, ElementValueT> operator()() && noexcept {
+            return all_slot<Index, ElementValueT>{ self };
+        }
     };
 
     struct all_delete_this {
         all_connection* this_;
-        void operator()() { delete this_; }
+        void operator()() noexcept { delete this_; }
     };
 
     template <std::size_t Index, typename SignalT = meta::type::at_t<Index, SignalTs...>>
-    using Slot = all_slot<Index, typename SignalT::value_type>;
+    using SlotCtor = all_slot_ctor<Index, typename SignalT::value_type>;
     template <std::size_t Index, typename SignalT = meta::type::at_t<Index, SignalTs...>>
-    using Connection = subscribe_connection<SignalT, Slot<Index, SignalT>>;
+    using Connection = ConnectionFor<SignalT, SlotCtor<Index, SignalT>>;
     static constexpr std::size_t N = sizeof...(SignalTs);
 
     template <std::size_t... Indexes>
@@ -56,23 +68,23 @@ private:
     static auto
         make_connections(all_connection& self, std::tuple<SignalTs...>&& signals, std::index_sequence<Indexes...>) {
         return std::make_tuple(meta::lazy_eval{ [signal = std::move(std::get<Indexes>(signals)), &self]() mutable {
-            return Connection<Indexes>{ std::move(signal), [&] { return Slot<Indexes>{ self }; } };
+            return std::move(signal).subscribe(SlotCtor<Indexes>{ self });
         } }...);
     }
 
 public:
-    all_connection(std::tuple<SignalTs...>&& signals, serial_executor<Atomic>& an_executor, slot<ValueT, ErrorT>& slot)
+    all_connection(std::tuple<SignalTs...>&& signals, serial_executor<Atomic>& an_executor, SlotCtorT slot_ctor)
         : parallel_{ make_connections(*this, std::move(signals), std::make_index_sequence<N>()),
                      an_executor,
                      all_delete_this{ this } },
-          slot_{ slot } {}
+          slot_{ std::move(slot_ctor)() } {}
 
 public: // connection
-    cancel_handle& emit() && { return std::move(parallel_).emit(); };
+    CancelHandle auto emit() && noexcept { return std::move(parallel_).emit(); }
 
 private:
     template <std::size_t Index, typename ElementValueT>
-    void set_value_impl(ElementValueT&& value) {
+    void set_value_impl(ElementValueT&& value) noexcept {
         std::get<Index>(maybe_results_).emplace(std::move(value));
 
         // synchronizing access to maybe_results_
@@ -89,15 +101,15 @@ private:
                 },
                 std::move(maybe_results_)
             );
-            slot_.set_value(std::move(result));
+            std::move(slot_).set_value(std::move(result));
         }
 
         parallel_.schedule_delete_this();
     }
 
-    void set_error_impl(std::size_t index, ErrorT&& error) {
+    void set_error_impl(std::size_t index, ErrorT&& error) noexcept {
         if (!done_.exchange(true, std::memory_order::acq_rel)) {
-            slot_.set_error(std::move(error));
+            std::move(slot_).set_error(std::move(error));
             parallel_.schedule_try_cancel_beside(index);
         }
 
@@ -107,9 +119,9 @@ private:
         }
     }
 
-    void set_null_impl(std::size_t index) {
+    void set_null_impl(std::size_t index) noexcept {
         if (!done_.exchange(true, std::memory_order::acq_rel)) {
-            slot_.set_null();
+            std::move(slot_).set_null();
             parallel_.schedule_try_cancel_beside(index);
         }
 
@@ -122,23 +134,24 @@ private:
 private:
     parallel_connection_type parallel_;
     std::tuple<meta::maybe<typename SignalTs::value_type>...> maybe_results_{};
-    slot<ValueT, ErrorT>& slot_;
+    slot_type slot_;
     alignas(hardware_destructive_interference_size) Atomic<bool> done_{ false };
 };
 
-template <typename ValueT, typename ErrorT, template <typename> typename Atomic, SomeSignal... SignalTs>
-struct all_connection_box final : connection {
-    using connection_type = all_connection<ValueT, ErrorT, Atomic, SignalTs...>;
+template <
+    typename ValueT,
+    typename ErrorT,
+    template <typename> typename Atomic,
+    typename SlotCtorT,
+    SomeSignal... SignalTs>
+struct all_connection_box final {
+    using connection_type = all_connection<ValueT, ErrorT, Atomic, SlotCtorT, SignalTs...>;
 
 public:
-    all_connection_box(
-        std::tuple<SignalTs...>&& signals,
-        serial_executor<Atomic>& an_executor,
-        slot<ValueT, ErrorT>& slot
-    )
-        : connection_{ std::make_unique<connection_type>(std::move(signals), an_executor, slot) } {}
+    all_connection_box(std::tuple<SignalTs...>&& signals, serial_executor<Atomic>& an_executor, SlotCtorT slot_ctor)
+        : connection_{ std::make_unique<connection_type>(std::move(signals), an_executor, std::move(slot_ctor)) } {}
 
-    cancel_handle& emit() && override {
+    CancelHandle auto emit() && noexcept {
         auto& a_connection = *DEBUG_ASSERT_VAL(connection_.release());
         return std::move(a_connection).emit();
     }
@@ -157,15 +170,16 @@ public:
     explicit all_signal(SignalTs&&... signals, serial_executor<Atomic>& an_executor)
         : signals_{ std::move(signals)... }, executor_{ an_executor } {}
 
-    all_connection_box<value_type, error_type, Atomic, SignalTs...> subscribe(slot<value_type, error_type>& slot) && {
-        return all_connection_box<value_type, error_type, Atomic, SignalTs...>{
+    template <SlotCtor<value_type, error_type> SlotCtorT>
+    constexpr Connection auto subscribe(SlotCtorT&& slot_ctor) && noexcept {
+        return all_connection_box<value_type, error_type, Atomic, SlotCtorT, SignalTs...>{
             std::move(signals_),
             executor_,
-            slot,
+            std::move(slot_ctor),
         };
     }
 
-    executor& get_executor() { return executor_.get_inner(); }
+    executor& get_executor() noexcept { return executor_.get_inner(); }
 
 private:
     std::tuple<SignalTs...> signals_;
