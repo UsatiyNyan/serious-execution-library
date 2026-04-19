@@ -3,6 +3,7 @@
 //
 
 #include "sl/exec/algo.hpp"
+#include "sl/exec/algo/emit/subscribe.hpp"
 #include "sl/exec/algo/sched/manual.hpp"
 #include "sl/exec/model.hpp"
 #include "sl/exec/thread/event.hpp"
@@ -89,13 +90,13 @@ TEST(algo, subscribe) {
     manual_executor executor;
 
     int value = 0;
-    subscribe_connection imalive = value_as_signal(42) //
-                                   | continue_on(executor) //
-                                   | map([&value](int x) {
-                                         value = x;
-                                         return meta::unit{};
-                                     })
-                                   | subscribe();
+    auto imalive = value_as_signal(42) //
+        | continue_on(executor) //
+        | map([&value](int x) {
+              value = x;
+              return meta::unit{};
+          })
+        | subscribe();
     std::move(imalive).emit();
 
     EXPECT_EQ(value, 0);
@@ -186,7 +187,7 @@ TEST(algo, forkSimple) {
 
 TEST(algo, force) {
     auto [future, promise] = exec::make_contract<int, meta::undefined>();
-    promise.set_value(42);
+    std::move(promise).set_value(42);
     const int result = (std::move(future) | get<nowait_event>()).value().value();
     EXPECT_EQ(result, 42);
 }
@@ -206,7 +207,7 @@ TEST(algo, forceMany) {
     }
 
     for (auto& promise : promises) {
-        promise.set_value(42);
+        std::move(promise).set_value(42);
     }
 
     EXPECT_EQ(std::vector<int>(10, 42), results);

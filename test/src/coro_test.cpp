@@ -4,6 +4,7 @@
 
 #include "sl/exec/algo.hpp"
 #include "sl/exec/coro.hpp"
+#include "sl/exec/model/syntax.hpp"
 #include "sl/exec/thread.hpp"
 
 #include <range/v3/view/enumerate.hpp>
@@ -402,6 +403,7 @@ TEST(coro, awaitVoid) {
 }
 
 TEST(coro, asSignal) {
+    using exec::operator|;
     {
         auto maybe_result = as_signal([] -> async<int> { co_return 42; }()) //
                             | map([](int x) { return std::to_string(x); }) //
