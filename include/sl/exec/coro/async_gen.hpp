@@ -28,7 +28,6 @@ private:
 public:
     ~async_gen() noexcept {
         if (handle_) {
-            DEBUG_ASSERT(handle_.done());
             handle_.destroy();
         }
     }
